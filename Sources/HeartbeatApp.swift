@@ -23,8 +23,9 @@ class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	
-	let rainPlayer = AVAudioPlayerNode()
-	let organicHeartbeatPlayer = AVAudioPlayerNode()
+	// Shifted from AVAudioPlayerNode to AVAudioPlayer for disk-streaming and native looping
+	var rainPlayer: AVAudioPlayer?
+	var organicHeartbeatPlayer: AVAudioPlayer?
 	
 	@Published var isPlaying = false
 	
@@ -33,7 +34,14 @@ class AudioEngineManager: ObservableObject {
 		HeartbeatProfile(name: "Standard Resting Heart (72 BPM)", bpm: 72, lubBase: 45, lubDrop: 10, lubDecay: 20, dubBase: 55, dubDrop: 15, dubDecay: 25, dubDelay: 0.28, subFreq: 30, subVol: 0.30, subDecay: 5, whooshVol: 0.30, noiseLpf: 500),
 		HeartbeatProfile(name: "Womb Simulation (55 BPM)", bpm: 55, lubBase: 55, lubDrop: 20, lubDecay: 20, dubBase: 70, dubDrop: 25, dubDecay: 25, dubDelay: 0.35, subFreq: 35, subVol: 0.45, subDecay: 5, whooshVol: 0.60, noiseLpf: 650),
 		HeartbeatProfile(name: "Zen Meditation (50 BPM)", bpm: 50, lubBase: 35, lubDrop: 25, lubDecay: 15, dubBase: 45, dubDrop: 30, dubDecay: 18, dubDelay: 0.32, subFreq: 30, subVol: 0.40, subDecay: 4, whooshVol: 0.12, noiseLpf: 150),
-		HeartbeatProfile(name: "Deep Sleep Resonance (40 BPM)", bpm: 40, lubBase: 30, lubDrop: 20, lubDecay: 12, dubBase: 35, dubDrop: 25, dubDecay: 15, dubDelay: 0.38, subFreq: 25, subVol: 0.60, subDecay: 4, whooshVol: 0.20, noiseLpf: 200)
+		HeartbeatProfile(name: "Athletic Recovery (45 BPM)", bpm: 45, lubBase: 40, lubDrop: 15, lubDecay: 16, dubBase: 50, dubDrop: 20, dubDecay: 20, dubDelay: 0.34, subFreq: 30, subVol: 0.50, subDecay: 5, whooshVol: 0.25, noiseLpf: 300),
+		HeartbeatProfile(name: "Gentle Drift (42 BPM)", bpm: 42, lubBase: 32, lubDrop: 18, lubDecay: 14, dubBase: 38, dubDrop: 22, dubDecay: 16, dubDelay: 0.36, subFreq: 26, subVol: 0.55, subDecay: 4, whooshVol: 0.22, noiseLpf: 220),
+		HeartbeatProfile(name: "Deep Sleep Resonance (40 BPM)", bpm: 40, lubBase: 30, lubDrop: 20, lubDecay: 12, dubBase: 35, dubDrop: 25, dubDecay: 15, dubDelay: 0.38, subFreq: 25, subVol: 0.60, subDecay: 4, whooshVol: 0.20, noiseLpf: 200),
+		HeartbeatProfile(name: "Hibernation State (35 BPM)", bpm: 35, lubBase: 28, lubDrop: 20, lubDecay: 10, dubBase: 32, dubDrop: 25, dubDecay: 12, dubDelay: 0.40, subFreq: 22, subVol: 0.70, subDecay: 3, whooshVol: 0.15, noiseLpf: 180),
+		HeartbeatProfile(name: "Deep Trance (30 BPM)", bpm: 30, lubBase: 25, lubDrop: 25, lubDecay: 10, dubBase: 30, dubDrop: 30, dubDecay: 12, dubDelay: 0.45, subFreq: 20, subVol: 0.75, subDecay: 3, whooshVol: 0.15, noiseLpf: 150),
+		HeartbeatProfile(name: "Slow Wave Sleep (25 BPM)", bpm: 25, lubBase: 22, lubDrop: 25, lubDecay: 8, dubBase: 26, dubDrop: 30, dubDecay: 10, dubDelay: 0.50, subFreq: 18, subVol: 0.85, subDecay: 2, whooshVol: 0.10, noiseLpf: 130),
+		HeartbeatProfile(name: "Cinematic Oceanic (18 BPM)", bpm: 18, lubBase: 25, lubDrop: 30, lubDecay: 8, dubBase: 30, dubDrop: 35, dubDecay: 10, dubDelay: 0.60, subFreq: 20, subVol: 0.90, subDecay: 2, whooshVol: 0.15, noiseLpf: 120),
+		HeartbeatProfile(name: "Soft Pillowy Pulse (62 BPM)", bpm: 62, lubBase: 40, lubDrop: 15, lubDecay: 25, dubBase: 50, dubDrop: 20, dubDecay: 30, dubDelay: 0.28, subFreq: 32, subVol: 0.35, subDecay: 6, whooshVol: 0.20, noiseLpf: 250)
 	]
 	
 	let panOptions = ["Center", "Left", "Right", "Soft Left", "Soft Right", "1 Minute Slow Shift", "5 Minute Slow Shift"]
@@ -48,9 +56,7 @@ class AudioEngineManager: ObservableObject {
 	}
 	@Published var placementIndex = 0 { didSet { rebuildPrototypes() } }
 	
-	@Published var masterVolume: Double = 1.0 {
-		didSet { engine.mainMixerNode.outputVolume = Float(masterVolume) }
-	}
+	@Published var masterVolume: Double = 1.0 { didSet { updateVolumes() } }
 	
 	// Procedural Volumes
 	@Published var heartbeatVolume: Double = 1.0
@@ -59,12 +65,8 @@ class AudioEngineManager: ObservableObject {
 	@Published var breathVolume: Double = 0.0
 	
 	// Organic MP3 Volumes
-	@Published var rainVolume: Double = 0.0 {
-		didSet { rainPlayer.volume = Float(rainVolume) }
-	}
-	@Published var organicHeartbeatVolume: Double = 0.0 {
-		didSet { organicHeartbeatPlayer.volume = Float(organicHeartbeatVolume) }
-	}
+	@Published var rainVolume: Double = 0.0 { didSet { updateVolumes() } }
+	@Published var organicHeartbeatVolume: Double = 0.0 { didSet { updateVolumes() } }
 	
 	@Published var panHeartIndex = 0
 	@Published var panClockIndex = 0
@@ -97,13 +99,30 @@ class AudioEngineManager: ObservableObject {
 	
 	init() {
 		setupAudio()
+		setupMediaPlayers()
 		setupMediaControls()
 		setupObservers()
 		rebuildPrototypes()
+		updateVolumes()
+	}
+	
+	private func updateVolumes() {
+		engine.mainMixerNode.outputVolume = Float(masterVolume)
+		rainPlayer?.volume = Float(rainVolume * masterVolume)
+		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume)
+	}
+	
+	private func setupMediaPlayers() {
+		func loadPlayer(filename: String, ext: String) -> AVAudioPlayer? {
+			guard let url = Bundle.main.url(forResource: filename, withExtension: ext) else { return nil }
+			let player = try? AVAudioPlayer(contentsOf: url)
+			player?.numberOfLoops = -1 // Infinite loop
+			player?.prepareToPlay()
+			return player
+		}
 		
-		// Initialize organic volumes to 0 to match sliders
-		rainPlayer.volume = 0.0
-		organicHeartbeatPlayer.volume = 0.0
+		rainPlayer = loadPlayer(filename: "RAIN", ext: "mp3")
+		organicHeartbeatPlayer = loadPlayer(filename: "HEARTBEAT", ext: "mp3")
 	}
 	
 	private func setupAudio() {
@@ -118,14 +137,6 @@ class AudioEngineManager: ObservableObject {
 
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		
-		// Attach nodes
-		engine.attach(rainPlayer)
-		engine.attach(organicHeartbeatPlayer)
-		
-		// Connect organic players to main mixer
-		engine.connect(rainPlayer, to: engine.mainMixerNode, format: format)
-		engine.connect(organicHeartbeatPlayer, to: engine.mainMixerNode, format: format)
-		
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
 			guard let self = self else { return noErr }
 			let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
@@ -139,7 +150,6 @@ class AudioEngineManager: ObservableObject {
 			let vBrown = Float(self.brownVolume)
 			let vBreath = Float(self.breathVolume)
 			
-			// Master volume is now handled by the engine.mainMixerNode directly
 			let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.6)
 			
 			for frame in 0..<Int(frameCount) {
@@ -214,23 +224,6 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
-	private func startLoopingFile(player: AVAudioPlayerNode, filename: String, ext: String) {
-		guard let url = Bundle.main.url(forResource: filename, withExtension: ext) else {
-			print("Could not find \(filename).\(ext) in bundle. Make sure it is added to the project.")
-			return
-		}
-		
-		do {
-			let file = try AVAudioFile(forReading: url)
-			guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else { return }
-			try file.read(into: buffer)
-			
-			player.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)
-		} catch {
-			print("Error reading audio file \(filename): \(error)")
-		}
-	}
-	
 	private func setupMediaControls() {
 		let commandCenter = MPRemoteCommandCenter.shared()
 		
@@ -267,15 +260,25 @@ class AudioEngineManager: ObservableObject {
 				  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
 			
 			if type == .began {
-				self.isPlaying = false
-				self.engine.pause()
-				self.rainPlayer.pause()
-				self.organicHeartbeatPlayer.pause()
+				if self.isPlaying { self.playStop() }
 			} else if type == .ended {
 				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
 				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
 				if options.contains(.shouldResume) {
-					self.playStop() 
+					if !self.isPlaying { self.playStop() }
+				}
+			}
+		}
+		
+		// The Missing Link: Pausing the engine when headphones are disconnected
+		NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
+			guard let self = self, let userInfo = notification.userInfo,
+				  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
+			
+			if reason == .oldDeviceUnavailable {
+				if self.isPlaying {
+					self.playStop()
 				}
 			}
 		}
@@ -285,8 +288,8 @@ class AudioEngineManager: ObservableObject {
 			if self.isPlaying {
 				do {
 					try self.engine.start()
-					self.rainPlayer.play()
-					self.organicHeartbeatPlayer.play()
+					self.rainPlayer?.play()
+					self.organicHeartbeatPlayer?.play()
 				} catch {
 					print("Failed to restart engine after config change: \(error)")
 				}
@@ -297,23 +300,17 @@ class AudioEngineManager: ObservableObject {
 	func playStop() {
 		if isPlaying {
 			engine.pause()
-			rainPlayer.pause()
-			organicHeartbeatPlayer.pause()
+			rainPlayer?.pause()
+			organicHeartbeatPlayer?.pause()
 			isPlaying = false
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
 			do {
 				let session = AVAudioSession.sharedInstance()
 				try session.setActive(true)
-				
-				// Schedule the buffers to loop before starting the engine
-				startLoopingFile(player: rainPlayer, filename: "RAIN", ext: "mp3")
-				startLoopingFile(player: organicHeartbeatPlayer, filename: "HEARTBEAT", ext: "mp3")
-				
 				try engine.start()
-				rainPlayer.play()
-				organicHeartbeatPlayer.play()
-				
+				rainPlayer?.play()
+				organicHeartbeatPlayer?.play()
 				isPlaying = true
 				updateNowPlaying()
 				UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
@@ -398,9 +395,23 @@ class AudioEngineManager: ObservableObject {
 			if abs(noise[i]) > maxVal { maxVal = abs(noise[i]) }
 		}
 		
+		// Normalize
 		if maxVal > 0 {
 			for i in 0..<length { noise[i] /= maxVal }
 		}
+		
+		// Crossfade the ends to eliminate the 5-second loop popping sound
+		let crossfadeLength = Int(sampleRate * 0.5) // 0.5 seconds of crossfading
+		if length > crossfadeLength {
+			for i in 0..<crossfadeLength {
+				let ratio = Float(i) / Float(crossfadeLength)
+				let startSample = noise[i]
+				let endSample = noise[length - crossfadeLength + i]
+				// Smoothly blend the end of the array into the start of the array
+				noise[i] = startSample * ratio + endSample * (1.0 - ratio)
+			}
+		}
+		
 		return noise
 	}
 	
