@@ -80,17 +80,6 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	private func setupAudio() {
-		do {
-			let session = AVAudioSession.sharedInstance()
-			// .playback ensures audio plays when screen is locked
-			// .mixWithOthers allows simultaneous playback with Spotify/Apple Music
-			try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-			try session.setPreferredSampleRate(44100.0)
-			try session.setActive(true)
-		} catch {
-			print("Failed to configure audio session: \(error)")
-		}
-
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
@@ -185,9 +174,20 @@ class AudioEngineManager: ObservableObject {
 		if isPlaying {
 			engine.stop()
 			isPlaying = false
+			do {
+				try AVAudioSession.sharedInstance().setActive(false)
+			} catch {
+				print("Failed to deactivate session: \(error)")
+			}
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
 			do {
+				// Establish background audio connection exactly when playback starts
+				let session = AVAudioSession.sharedInstance()
+				try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+				try session.setPreferredSampleRate(44100.0)
+				try session.setActive(true)
+				
 				try engine.start()
 				isPlaying = true
 				UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
@@ -248,7 +248,6 @@ class AudioEngineManager: ObservableObject {
 		let alpha: Float
 		if let freq = lpfFreq {
 			let dt = 1.0 / sampleRate
-			// Tighten the cutoff to mimic the heavy attenuation of Python's exponential curve
 			let rc = 1.0 / (2.0 * Double.pi * (freq * 0.5))
 			alpha = Float(dt / (rc + dt))
 		} else {
@@ -258,13 +257,11 @@ class AudioEngineManager: ObservableObject {
 		for i in 0..<length {
 			let white = gaussianRandom()
 			
-			// This integration matches the 1.0 / (freqs + 1.0) amplitude base from Python
 			lastBrown = 0.995 * lastBrown + 0.025 * white
 			
 			if isBrown {
 				noise[i] = lastBrown
 			} else {
-				// Feed the deep Brown noise through the cascaded filter, NOT white noise
 				filter1 = filter1 + alpha * (lastBrown - filter1)
 				filter2 = filter2 + alpha * (filter1 - filter2)
 				filter3 = filter3 + alpha * (filter2 - filter3)
