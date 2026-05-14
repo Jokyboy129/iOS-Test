@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import MediaPlayer
 
 struct HeartbeatProfile: Hashable {
 	let name: String
@@ -36,7 +37,12 @@ class AudioEngineManager: ObservableObject {
 	let clockOptions = ["Quartz Wall Clock", "Pocket Watch", "Grandfather Clock", "Metronome"]
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
 	
-	@Published var selectedProfileIndex = 0 { didSet { rebuildPrototypes() } }
+	@Published var selectedProfileIndex = 0 { 
+		didSet { 
+			rebuildPrototypes()
+			updateNowPlaying()
+		} 
+	}
 	@Published var placementIndex = 0 { didSet { rebuildPrototypes() } }
 	
 	@Published var masterVolume: Double = 1.0
@@ -76,10 +82,21 @@ class AudioEngineManager: ObservableObject {
 	
 	init() {
 		setupAudio()
+		setupMediaControls()
+		setupObservers()
 		rebuildPrototypes()
 	}
 	
 	private func setupAudio() {
+		do {
+			let session = AVAudioSession.sharedInstance()
+			try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+			try session.setPreferredSampleRate(44100.0)
+			try session.setActive(true)
+		} catch {
+			print("Failed to configure audio session: \(error)")
+		}
+
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
@@ -170,26 +187,77 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
+	private func setupMediaControls() {
+		let commandCenter = MPRemoteCommandCenter.shared()
+		
+		commandCenter.playCommand.addTarget { [weak self] _ in
+			guard let self = self else { return .commandFailed }
+			if !self.isPlaying {
+				self.playStop()
+				return .success
+			}
+			return .commandFailed
+		}
+		
+		commandCenter.pauseCommand.addTarget { [weak self] _ in
+			guard let self = self else { return .commandFailed }
+			if self.isPlaying {
+				self.playStop()
+				return .success
+			}
+			return .commandFailed
+		}
+	}
+	
+	private func updateNowPlaying() {
+		var nowPlayingInfo = [String: Any]()
+		nowPlayingInfo[MPMediaItemPropertyTitle] = profiles[selectedProfileIndex].name
+		nowPlayingInfo[MPMediaItemPropertyArtist] = "ASMR Sleep Engine"
+		MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+	}
+	
+	private func setupObservers() {
+		NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
+			guard let self = self, let userInfo = notification.userInfo,
+				  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+				  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+			
+			if type == .began {
+				self.isPlaying = false
+				self.engine.pause()
+			} else if type == .ended {
+				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
+				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+				if options.contains(.shouldResume) {
+					self.playStop() 
+				}
+			}
+		}
+		
+		NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in
+			guard let self = self else { return }
+			if self.isPlaying {
+				do {
+					try self.engine.start()
+				} catch {
+					print("Failed to restart engine after config change: \(error)")
+				}
+			}
+		}
+	}
+	
 	func playStop() {
 		if isPlaying {
-			engine.stop()
+			engine.pause()
 			isPlaying = false
-			do {
-				try AVAudioSession.sharedInstance().setActive(false)
-			} catch {
-				print("Failed to deactivate session: \(error)")
-			}
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
 			do {
-				// Establish background audio connection exactly when playback starts
 				let session = AVAudioSession.sharedInstance()
-				try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-				try session.setPreferredSampleRate(44100.0)
 				try session.setActive(true)
-				
 				try engine.start()
 				isPlaying = true
+				updateNowPlaying()
 				UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
 			} catch {
 				print("Engine start error: \(error)")
