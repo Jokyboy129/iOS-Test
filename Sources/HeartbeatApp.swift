@@ -80,6 +80,15 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	private func setupAudio() {
+		do {
+			let session = AVAudioSession.sharedInstance()
+			try session.setCategory(.playback, mode: .measurement, options: [])
+			try session.setPreferredSampleRate(44100.0)
+			try session.setActive(true)
+		} catch {
+			print("Failed to configure audio session: \(error)")
+		}
+
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
@@ -214,11 +223,25 @@ class AudioEngineManager: ObservableObject {
 		let outR = ((inR * keepR + inL * bleedToR) / norm) * vol
 		return (outL, outR)
 	}
+
+	private func gaussianRandom() -> Float {
+		var u1: Float = 0
+		repeat {
+			u1 = Float.random(in: 0..<1)
+		} while u1 == 0
+		let u2 = Float.random(in: 0..<1)
+		return sqrt(-2.0 * log(u1)) * cos(2.0 * Float.pi * u2)
+	}
 	
 	private func generateSeamlessNoise(length: Int, lpfFreq: Double? = nil, isBrown: Bool = false) -> [Float] {
 		var noise = [Float](repeating: 0, count: length)
 		var maxVal: Float = 0
 		var lastOut: Float = 0
+		
+		var filter1: Float = 0
+		var filter2: Float = 0
+		var filter3: Float = 0
+		var filter4: Float = 0
 		
 		let alpha: Float
 		if let freq = lpfFreq {
@@ -230,14 +253,19 @@ class AudioEngineManager: ObservableObject {
 		}
 		
 		for i in 0..<length {
-			let white = Float.random(in: -1...1)
+			let white = gaussianRandom()
+			
 			if isBrown {
 				lastOut = (lastOut + (0.02 * white)) / 1.02
-				noise[i] = lastOut * 3.5
-			} else {
-				lastOut = lastOut + alpha * (white - lastOut)
 				noise[i] = lastOut
+			} else {
+				filter1 = filter1 + alpha * (white - filter1)
+				filter2 = filter2 + alpha * (filter1 - filter2)
+				filter3 = filter3 + alpha * (filter2 - filter3)
+				filter4 = filter4 + alpha * (filter3 - filter4)
+				noise[i] = filter4
 			}
+			
 			if abs(noise[i]) > maxVal { maxVal = abs(noise[i]) }
 		}
 		
@@ -358,7 +386,7 @@ class AudioEngineManager: ObservableObject {
 		var clkProto = [Float](repeating: 0, count: nClockProto)
 		for i in 0..<nClockProto {
 			let tc = Double(i) / sampleRate
-			let randomGaussian = Float.random(in: -1...1) * 0.3
+			let randomGaussian = gaussianRandom() * 0.3
 			if clkType == "Quartz Wall Clock" {
 				let body = (sin(2 * Double.pi * 1200 * tc) * 0.15 + sin(2 * Double.pi * 2000 * tc) * 0.05) * exp(-120 * tc)
 				clkProto[i] = Float(body) + randomGaussian * Float(exp(-300 * tc))
