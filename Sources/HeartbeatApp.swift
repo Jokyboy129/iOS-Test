@@ -23,9 +23,11 @@ class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	
-	// Shifted from AVAudioPlayerNode to AVAudioPlayer for disk-streaming and native looping
-	var rainPlayer: AVAudioPlayer?
-	var organicHeartbeatPlayer: AVAudioPlayer?
+	let rainPlayer = AVAudioPlayerNode()
+	let organicHeartbeatPlayer = AVAudioPlayerNode()
+	
+	var rainBuffer: AVAudioPCMBuffer?
+	var organicHeartbeatBuffer: AVAudioPCMBuffer?
 	
 	@Published var isPlaying = false
 	
@@ -58,13 +60,11 @@ class AudioEngineManager: ObservableObject {
 	
 	@Published var masterVolume: Double = 1.0 { didSet { updateVolumes() } }
 	
-	// Procedural Volumes
 	@Published var heartbeatVolume: Double = 1.0
 	@Published var clockVolume: Double = 0.0
 	@Published var brownVolume: Double = 0.0
 	@Published var breathVolume: Double = 0.0
 	
-	// Organic MP3 Volumes
 	@Published var rainVolume: Double = 0.0 { didSet { updateVolumes() } }
 	@Published var organicHeartbeatVolume: Double = 0.0 { didSet { updateVolumes() } }
 	
@@ -99,7 +99,6 @@ class AudioEngineManager: ObservableObject {
 	
 	init() {
 		setupAudio()
-		setupMediaPlayers()
 		setupMediaControls()
 		setupObservers()
 		rebuildPrototypes()
@@ -108,21 +107,8 @@ class AudioEngineManager: ObservableObject {
 	
 	private func updateVolumes() {
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
-		rainPlayer?.volume = Float(rainVolume * masterVolume)
-		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume)
-	}
-	
-	private func setupMediaPlayers() {
-		func loadPlayer(filename: String, ext: String) -> AVAudioPlayer? {
-			guard let url = Bundle.main.url(forResource: filename, withExtension: ext) else { return nil }
-			let player = try? AVAudioPlayer(contentsOf: url)
-			player?.numberOfLoops = -1 // Infinite loop
-			player?.prepareToPlay()
-			return player
-		}
-		
-		rainPlayer = loadPlayer(filename: "RAIN", ext: "mp3")
-		organicHeartbeatPlayer = loadPlayer(filename: "HEARTBEAT", ext: "mp3")
+		rainPlayer.volume = Float(rainVolume * masterVolume)
+		organicHeartbeatPlayer.volume = Float(organicHeartbeatVolume * masterVolume)
 	}
 	
 	private func setupAudio() {
@@ -135,7 +121,27 @@ class AudioEngineManager: ObservableObject {
 			print("Failed to configure audio session: \(error)")
 		}
 
-		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+		engine.attach(rainPlayer)
+		engine.attach(organicHeartbeatPlayer)
+		
+		let defaultFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+		
+		func connectAndLoadBuffer(player: AVAudioPlayerNode, filename: String) -> AVAudioPCMBuffer? {
+			if let url = Bundle.main.url(forResource: filename, withExtension: "mp3"),
+			   let file = try? AVAudioFile(forReading: url) {
+				engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
+				if let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) {
+					try? file.read(into: buffer)
+					return buffer
+				}
+			} else {
+				engine.connect(player, to: engine.mainMixerNode, format: defaultFormat)
+			}
+			return nil
+		}
+		
+		rainBuffer = connectAndLoadBuffer(player: rainPlayer, filename: "RAIN")
+		organicHeartbeatBuffer = connectAndLoadBuffer(player: organicHeartbeatPlayer, filename: "HEARTBEAT")
 		
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
 			guard let self = self else { return noErr }
@@ -220,7 +226,7 @@ class AudioEngineManager: ObservableObject {
 		
 		if let node = sourceNode {
 			engine.attach(node)
-			engine.connect(node, to: engine.mainMixerNode, format: format)
+			engine.connect(node, to: engine.mainMixerNode, format: defaultFormat)
 		}
 	}
 	
@@ -270,16 +276,13 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 		
-		// The Missing Link: Pausing the engine when headphones are disconnected
 		NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
 			guard let self = self, let userInfo = notification.userInfo,
 				  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
 			
 			if reason == .oldDeviceUnavailable {
-				if self.isPlaying {
-					self.playStop()
-				}
+				if self.isPlaying { self.playStop() }
 			}
 		}
 		
@@ -287,9 +290,14 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self else { return }
 			if self.isPlaying {
 				do {
+					self.rainPlayer.stop()
+					self.organicHeartbeatPlayer.stop()
+					if let buf = self.rainBuffer { self.rainPlayer.scheduleBuffer(buf, at: nil, options: .loops) }
+					if let buf = self.organicHeartbeatBuffer { self.organicHeartbeatPlayer.scheduleBuffer(buf, at: nil, options: .loops) }
+					
 					try self.engine.start()
-					self.rainPlayer?.play()
-					self.organicHeartbeatPlayer?.play()
+					self.rainPlayer.play()
+					self.organicHeartbeatPlayer.play()
 				} catch {
 					print("Failed to restart engine after config change: \(error)")
 				}
@@ -300,17 +308,22 @@ class AudioEngineManager: ObservableObject {
 	func playStop() {
 		if isPlaying {
 			engine.pause()
-			rainPlayer?.pause()
-			organicHeartbeatPlayer?.pause()
+			rainPlayer.stop() // Prevents duplicate buffer overlap
+			organicHeartbeatPlayer.stop()
 			isPlaying = false
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
 			do {
 				let session = AVAudioSession.sharedInstance()
 				try session.setActive(true)
+				
+				if let buf = rainBuffer { rainPlayer.scheduleBuffer(buf, at: nil, options: .loops) }
+				if let buf = organicHeartbeatBuffer { organicHeartbeatPlayer.scheduleBuffer(buf, at: nil, options: .loops) }
+				
 				try engine.start()
-				rainPlayer?.play()
-				organicHeartbeatPlayer?.play()
+				rainPlayer.play()
+				organicHeartbeatPlayer.play()
+				
 				isPlaying = true
 				updateNowPlaying()
 				UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
@@ -359,7 +372,10 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	private func generateSeamlessNoise(length: Int, lpfFreq: Double? = nil, isBrown: Bool = false) -> [Float] {
-		var noise = [Float](repeating: 0, count: length)
+		// Generate an extra 1-second tail specifically for the crossfade fold
+		let crossfadeLength = Int(sampleRate * 1.0)
+		let totalLength = length + crossfadeLength
+		var noise = [Float](repeating: 0, count: totalLength)
 		var maxVal: Float = 0
 		var lastBrown: Float = 0
 		
@@ -377,9 +393,8 @@ class AudioEngineManager: ObservableObject {
 			alpha = 1.0
 		}
 		
-		for i in 0..<length {
+		for i in 0..<totalLength {
 			let white = gaussianRandom()
-			
 			lastBrown = 0.995 * lastBrown + 0.025 * white
 			
 			if isBrown {
@@ -391,28 +406,25 @@ class AudioEngineManager: ObservableObject {
 				filter4 = filter4 + alpha * (filter3 - filter4)
 				noise[i] = filter4
 			}
-			
-			if abs(noise[i]) > maxVal { maxVal = abs(noise[i]) }
 		}
 		
-		// Normalize
+		// Perfect Crossfade: Blend the extra tail directly over the beginning of the loop
+		for i in 0..<crossfadeLength {
+			let ratio = Float(i) / Float(crossfadeLength)
+			noise[i] = noise[length + i] * (1.0 - ratio) + noise[i] * ratio
+		}
+		
+		var finalNoise = Array(noise[0..<length])
+		
+		for i in 0..<length {
+			if abs(finalNoise[i]) > maxVal { maxVal = abs(finalNoise[i]) }
+		}
+		
 		if maxVal > 0 {
-			for i in 0..<length { noise[i] /= maxVal }
+			for i in 0..<length { finalNoise[i] /= maxVal }
 		}
 		
-		// Crossfade the ends to eliminate the 5-second loop popping sound
-		let crossfadeLength = Int(sampleRate * 0.5) // 0.5 seconds of crossfading
-		if length > crossfadeLength {
-			for i in 0..<crossfadeLength {
-				let ratio = Float(i) / Float(crossfadeLength)
-				let startSample = noise[i]
-				let endSample = noise[length - crossfadeLength + i]
-				// Smoothly blend the end of the array into the start of the array
-				noise[i] = startSample * ratio + endSample * (1.0 - ratio)
-			}
-		}
-		
-		return noise
+		return finalNoise
 	}
 	
 	private func rebuildPrototypes() {
