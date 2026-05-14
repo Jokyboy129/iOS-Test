@@ -1,0 +1,41 @@
+name: Build iOS App
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Build Unsigned App
+        run: |
+          xcodebuild clean build \
+            -project ASMRHeartbeat.xcodeproj \
+            -scheme ASMRHeartbeat \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT=$PWD/build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package into IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/Release-iphoneos/ASMRHeartbeat.app Payload/
+          zip -r ASMRHeartbeat.ipa Payload
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ASMRHeartbeat-App
+          path: ASMRHeartbeat.ipa
