@@ -82,7 +82,9 @@ class AudioEngineManager: ObservableObject {
 	private func setupAudio() {
 		do {
 			let session = AVAudioSession.sharedInstance()
-			try session.setCategory(.playback, mode: .measurement, options: [])
+			// .playback ensures audio plays when screen is locked
+			// .mixWithOthers allows simultaneous playback with Spotify/Apple Music
+			try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
 			try session.setPreferredSampleRate(44100.0)
 			try session.setActive(true)
 		} catch {
@@ -236,7 +238,7 @@ class AudioEngineManager: ObservableObject {
 	private func generateSeamlessNoise(length: Int, lpfFreq: Double? = nil, isBrown: Bool = false) -> [Float] {
 		var noise = [Float](repeating: 0, count: length)
 		var maxVal: Float = 0
-		var lastOut: Float = 0
+		var lastBrown: Float = 0
 		
 		var filter1: Float = 0
 		var filter2: Float = 0
@@ -246,7 +248,8 @@ class AudioEngineManager: ObservableObject {
 		let alpha: Float
 		if let freq = lpfFreq {
 			let dt = 1.0 / sampleRate
-			let rc = 1.0 / (2.0 * Double.pi * freq)
+			// Tighten the cutoff to mimic the heavy attenuation of Python's exponential curve
+			let rc = 1.0 / (2.0 * Double.pi * (freq * 0.5))
 			alpha = Float(dt / (rc + dt))
 		} else {
 			alpha = 1.0
@@ -255,11 +258,14 @@ class AudioEngineManager: ObservableObject {
 		for i in 0..<length {
 			let white = gaussianRandom()
 			
+			// This integration matches the 1.0 / (freqs + 1.0) amplitude base from Python
+			lastBrown = 0.995 * lastBrown + 0.025 * white
+			
 			if isBrown {
-				lastOut = (lastOut + (0.02 * white)) / 1.02
-				noise[i] = lastOut
+				noise[i] = lastBrown
 			} else {
-				filter1 = filter1 + alpha * (white - filter1)
+				// Feed the deep Brown noise through the cascaded filter, NOT white noise
+				filter1 = filter1 + alpha * (lastBrown - filter1)
 				filter2 = filter2 + alpha * (filter1 - filter2)
 				filter3 = filter3 + alpha * (filter2 - filter3)
 				filter4 = filter4 + alpha * (filter3 - filter4)
