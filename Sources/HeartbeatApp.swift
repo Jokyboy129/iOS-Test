@@ -23,6 +23,9 @@ class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	
+	let rainPlayer = AVAudioPlayerNode()
+	let organicHeartbeatPlayer = AVAudioPlayerNode()
+	
 	@Published var isPlaying = false
 	
 	let profiles: [HeartbeatProfile] = [
@@ -45,11 +48,23 @@ class AudioEngineManager: ObservableObject {
 	}
 	@Published var placementIndex = 0 { didSet { rebuildPrototypes() } }
 	
-	@Published var masterVolume: Double = 1.0
+	@Published var masterVolume: Double = 1.0 {
+		didSet { engine.mainMixerNode.outputVolume = Float(masterVolume) }
+	}
+	
+	// Procedural Volumes
 	@Published var heartbeatVolume: Double = 1.0
 	@Published var clockVolume: Double = 0.0
 	@Published var brownVolume: Double = 0.0
 	@Published var breathVolume: Double = 0.0
+	
+	// Organic MP3 Volumes
+	@Published var rainVolume: Double = 0.0 {
+		didSet { rainPlayer.volume = Float(rainVolume) }
+	}
+	@Published var organicHeartbeatVolume: Double = 0.0 {
+		didSet { organicHeartbeatPlayer.volume = Float(organicHeartbeatVolume) }
+	}
 	
 	@Published var panHeartIndex = 0
 	@Published var panClockIndex = 0
@@ -85,6 +100,10 @@ class AudioEngineManager: ObservableObject {
 		setupMediaControls()
 		setupObservers()
 		rebuildPrototypes()
+		
+		// Initialize organic volumes to 0 to match sliders
+		rainPlayer.volume = 0.0
+		organicHeartbeatPlayer.volume = 0.0
 	}
 	
 	private func setupAudio() {
@@ -99,6 +118,14 @@ class AudioEngineManager: ObservableObject {
 
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		
+		// Attach nodes
+		engine.attach(rainPlayer)
+		engine.attach(organicHeartbeatPlayer)
+		
+		// Connect organic players to main mixer
+		engine.connect(rainPlayer, to: engine.mainMixerNode, format: format)
+		engine.connect(organicHeartbeatPlayer, to: engine.mainMixerNode, format: format)
+		
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
 			guard let self = self else { return noErr }
 			let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
@@ -111,8 +138,8 @@ class AudioEngineManager: ObservableObject {
 			let vClock = Float(self.clockVolume)
 			let vBrown = Float(self.brownVolume)
 			let vBreath = Float(self.breathVolume)
-			let vMaster = Float(self.masterVolume)
 			
+			// Master volume is now handled by the engine.mainMixerNode directly
 			let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.6)
 			
 			for frame in 0..<Int(frameCount) {
@@ -168,8 +195,8 @@ class AudioEngineManager: ObservableObject {
 					chunkBrR = pannedBr.1
 				}
 				
-				let finalL = ((chunkHL + chunkCL + chunkBL + chunkBrL) / totalGain) * vMaster
-				let finalR = ((chunkHR + chunkCR + chunkBR + chunkBrR) / totalGain) * vMaster
+				let finalL = (chunkHL + chunkCL + chunkBL + chunkBrL) / totalGain
+				let finalR = (chunkHR + chunkCR + chunkBR + chunkBrR) / totalGain
 				
 				let ptrL = ablPointer[0].mData?.assumingMemoryBound(to: Float.self)
 				let ptrR = ablPointer[1].mData?.assumingMemoryBound(to: Float.self)
@@ -184,6 +211,23 @@ class AudioEngineManager: ObservableObject {
 		if let node = sourceNode {
 			engine.attach(node)
 			engine.connect(node, to: engine.mainMixerNode, format: format)
+		}
+	}
+	
+	private func startLoopingFile(player: AVAudioPlayerNode, filename: String, ext: String) {
+		guard let url = Bundle.main.url(forResource: filename, withExtension: ext) else {
+			print("Could not find \(filename).\(ext) in bundle. Make sure it is added to the project.")
+			return
+		}
+		
+		do {
+			let file = try AVAudioFile(forReading: url)
+			guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else { return }
+			try file.read(into: buffer)
+			
+			player.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)
+		} catch {
+			print("Error reading audio file \(filename): \(error)")
 		}
 	}
 	
@@ -225,6 +269,8 @@ class AudioEngineManager: ObservableObject {
 			if type == .began {
 				self.isPlaying = false
 				self.engine.pause()
+				self.rainPlayer.pause()
+				self.organicHeartbeatPlayer.pause()
 			} else if type == .ended {
 				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
 				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
@@ -239,6 +285,8 @@ class AudioEngineManager: ObservableObject {
 			if self.isPlaying {
 				do {
 					try self.engine.start()
+					self.rainPlayer.play()
+					self.organicHeartbeatPlayer.play()
 				} catch {
 					print("Failed to restart engine after config change: \(error)")
 				}
@@ -249,13 +297,23 @@ class AudioEngineManager: ObservableObject {
 	func playStop() {
 		if isPlaying {
 			engine.pause()
+			rainPlayer.pause()
+			organicHeartbeatPlayer.pause()
 			isPlaying = false
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
 			do {
 				let session = AVAudioSession.sharedInstance()
 				try session.setActive(true)
+				
+				// Schedule the buffers to loop before starting the engine
+				startLoopingFile(player: rainPlayer, filename: "RAIN", ext: "mp3")
+				startLoopingFile(player: organicHeartbeatPlayer, filename: "HEARTBEAT", ext: "mp3")
+				
 				try engine.start()
+				rainPlayer.play()
+				organicHeartbeatPlayer.play()
+				
 				isPlaying = true
 				updateNowPlaying()
 				UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
@@ -518,7 +576,7 @@ struct ContentView: View {
 					.accessibilityLabel("Heartbeat Anatomy Spatial Placement")
 				}
 				
-				Section(header: Text("3. Atmosphere & 3D Layer Mixer").accessibilityHidden(true)) {
+				Section(header: Text("3. Procedural Layer Mixer").accessibilityHidden(true)) {
 					VStack(alignment: .leading) {
 						Text("Heartbeat Volume").accessibilityHidden(true)
 						Slider(value: $engine.heartbeatVolume, in: 0...1)
@@ -580,7 +638,25 @@ struct ContentView: View {
 					.padding(.vertical, 4)
 				}
 				
-				Section(header: Text("Master Output Volume").accessibilityHidden(true)) {
+				Section(header: Text("4. Organic Audio Layers (MP3)").accessibilityHidden(true)) {
+					VStack(alignment: .leading) {
+						Text("Rain Volume").accessibilityHidden(true)
+						Slider(value: $engine.rainVolume, in: 0...1)
+							.accessibilityLabel("Rain Volume")
+							.accessibilityValue("\(Int(engine.rainVolume * 100)) percent")
+					}
+					.padding(.vertical, 4)
+					
+					VStack(alignment: .leading) {
+						Text("Organic Heartbeat Volume").accessibilityHidden(true)
+						Slider(value: $engine.organicHeartbeatVolume, in: 0...1)
+							.accessibilityLabel("Organic Heartbeat Volume")
+							.accessibilityValue("\(Int(engine.organicHeartbeatVolume * 100)) percent")
+					}
+					.padding(.vertical, 4)
+				}
+				
+				Section(header: Text("5. Master Output").accessibilityHidden(true)) {
 					Slider(value: $engine.masterVolume, in: 0...1)
 						.accessibilityLabel("Master Output Volume")
 						.accessibilityValue("\(Int(engine.masterVolume * 100)) percent")
