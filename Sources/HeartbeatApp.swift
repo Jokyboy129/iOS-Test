@@ -23,7 +23,6 @@ class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	
-	// Replaced AVAudioPlayerNode with the rock-solid, disk-streaming AVAudioPlayer
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
 	
@@ -106,20 +105,19 @@ class AudioEngineManager: ObservableObject {
 	
 	private func updateVolumes() {
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
-		// Manually calculate the organic player volumes based on the master fader
 		rainPlayer?.volume = Float(rainVolume * masterVolume)
 		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume)
 	}
 	
 	private func setupOrganicPlayers() {
 		func loadPlayer(filename: String) -> AVAudioPlayer? {
-			guard let url = Bundle.main.url(forResource: filename, withExtension: "mp3") else {
-				print("Missing file: \(filename).mp3")
+			guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else {
+				print("Missing file: \(filename).wav")
 				return nil
 			}
 			do {
 				let player = try AVAudioPlayer(contentsOf: url)
-				player.numberOfLoops = -1 // -1 means infinite native looping
+				player.numberOfLoops = -1
 				player.prepareToPlay()
 				return player
 			} catch {
@@ -365,7 +363,6 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	private func generateSeamlessNoise(length: Int, lpfFreq: Double? = nil, isBrown: Bool = false) -> [Float] {
-		// Generate an extra 1-second tail specifically for the crossfade fold
 		let crossfadeLength = Int(sampleRate * 1.0)
 		let totalLength = length + crossfadeLength
 		var noise = [Float](repeating: 0, count: totalLength)
@@ -401,7 +398,6 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 		
-		// Perfect Crossfade: Blend the extra tail directly over the beginning of the loop
 		for i in 0..<crossfadeLength {
 			let ratio = Float(i) / Float(crossfadeLength)
 			noise[i] = noise[length + i] * (1.0 - ratio) + noise[i] * ratio
@@ -654,7 +650,7 @@ struct ContentView: View {
 					.padding(.vertical, 4)
 				}
 				
-				Section(header: Text("4. Organic Audio Layers (MP3)").accessibilityHidden(true)) {
+				Section(header: Text("4. Organic Audio Layers (WAV)").accessibilityHidden(true)) {
 					VStack(alignment: .leading) {
 						Text("Rain Volume").accessibilityHidden(true)
 						Slider(value: $engine.rainVolume, in: 0...1)
