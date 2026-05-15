@@ -146,6 +146,7 @@ class AudioEngineManager: ObservableObject {
 	private let sampleRate: Double = 44100.0
 	
 	private var breathingTask: Task<Void, Never>?
+	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 	@Published var currentBreathingPhase: String = "Ready"
 	
 	init() {
@@ -169,7 +170,7 @@ class AudioEngineManager: ObservableObject {
 			let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
 			try session.setCategory(.playback, mode: .default, options: options)
 			try session.setPreferredSampleRate(sampleRate)
-			try session.setActive(true)
+			try session.setActive(true, options: .notifyOthersOnDeactivation)
 		} catch {
 			print("Audio Session error: \(error)")
 		}
@@ -471,6 +472,11 @@ class AudioEngineManager: ObservableObject {
 		breathingTask?.cancel()
 		isBreathing = true
 		
+		// Request background assertion so Task sleep doesn't get culled upon locking the screen
+		backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "BreathingExercise") { [weak self] in
+			self?.stopBreathingExercise()
+		}
+		
 		breathingTask = Task {
 			while !Task.isCancelled {
 				await MainActor.run { currentBreathingPhase = "Inhale (\(inhale)s)"; playBreathingCue(type: "INHALE") }
@@ -492,6 +498,10 @@ class AudioEngineManager: ObservableObject {
 					try? await Task.sleep(nanoseconds: UInt64(hold2) * 1_000_000_000)
 				}
 			}
+			if backgroundTaskID != .invalid {
+				UIApplication.shared.endBackgroundTask(backgroundTaskID)
+				backgroundTaskID = .invalid
+			}
 		}
 	}
 	
@@ -499,6 +509,10 @@ class AudioEngineManager: ObservableObject {
 		breathingTask?.cancel()
 		isBreathing = false
 		currentBreathingPhase = "Ready"
+		if backgroundTaskID != .invalid {
+			UIApplication.shared.endBackgroundTask(backgroundTaskID)
+			backgroundTaskID = .invalid
+		}
 	}
 	
 	private func setupAudio() {
@@ -738,7 +752,7 @@ class AudioEngineManager: ObservableObject {
 				subDub = sin(2 * Double.pi * trueSubFreq * t) * sDEnv * config.subVol * 0.85
 				
 				let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
-				dub = sin(dubPhase) * dEnv
+				let dub = sin(dubPhase) * dEnv
 			}
 			localDubEnv[i] = Float(dEnv)
 			
@@ -835,7 +849,6 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
-	// Stabilized play loop utilizing explicit synchronization pauses to prevent engine halts
 	func playStop() {
 		if isPlaying {
 			engine.pause()
@@ -847,15 +860,25 @@ class AudioEngineManager: ObservableObject {
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
 			do {
-				try AVAudioSession.sharedInstance().setActive(true)
+				// Re-verify and strictly configure the context session state BEFORE touching the active node pipelines.
+				let session = AVAudioSession.sharedInstance()
+				let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
+				try session.setCategory(.playback, mode: .default, options: options)
+				try session.setActive(true)
+				
 				if sourceNode == nil { setupAudio() }
 				
 				engine.prepare()
 				try engine.start()
 				
-				// Enforces an active 50ms async thread cushion. Allows the core I/O architecture to sync channels before audio fires.
-				DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+				// Added dispatch security buffer to let core AudioGraph finish hardware alignment before pushing data streams
+				DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
 					guard let self = self else { return }
+					// Verify engine didn't immediately stall during line negotiation
+					guard self.engine.isRunning else {
+						print("Engine stalled safely before channel explosion protection triggered.")
+						return
+					}
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.player?.play() }
