@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import MediaPlayer
+import UniformTypeIdentifiers
 
 struct HeartbeatProfile: Hashable, Codable {
 	let name: String
@@ -19,18 +20,49 @@ struct HeartbeatProfile: Hashable, Codable {
 	let noiseLpf: Double
 }
 
+struct TrackData: Codable, Identifiable {
+	var id = UUID()
+	var name: String
+	var path: String
+	var volume: Double
+	var isAppleMusic: Bool
+}
+
+class ImportedTrack: Identifiable, ObservableObject {
+	let id: UUID
+	@Published var name: String
+	@Published var volume: Double {
+		didSet { player?.volume = Float(volume * masterVolume) }
+	}
+	var player: AVAudioPlayer?
+	var isAppleMusic: Bool
+	var path: String
+	var masterVolume: Double = 1.0 {
+		didSet { player?.volume = Float(volume * masterVolume) }
+	}
+	
+	init(id: UUID = UUID(), name: String, player: AVAudioPlayer?, volume: Double, isAppleMusic: Bool, path: String) {
+		self.id = id
+		self.name = name
+		self.player = player
+		self.volume = volume
+		self.isAppleMusic = isAppleMusic
+		self.path = path
+	}
+}
+
 class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
-	var customFilePlayer: AVAudioPlayer?
 	var breathingPlayer: AVAudioPlayer?
 	var musicPlayer = MPMusicPlayerController.applicationQueuePlayer
 	
 	@Published var isPlaying = false
 	@Published var isBreathing = false
+	@Published var importedTracks: [ImportedTrack] = []
 	
 	let profiles: [HeartbeatProfile] = [
 		HeartbeatProfile(name: "ASMR Blood Flow (60 BPM)", bpm: 60, lubBase: 40, lubDrop: 15, lubDecay: 18, dubBase: 50, dubDrop: 20, dubDecay: 22, dubDelay: 0.30, subFreq: 35, subVol: 0.25, subDecay: 6, whooshVol: 0.50, noiseLpf: 450),
@@ -51,7 +83,6 @@ class AudioEngineManager: ObservableObject {
 	let clockOptions = ["Quartz Wall Clock", "Pocket Watch", "Grandfather Clock", "Metronome"]
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
 	
-	// AppStorage bindings for persistence
 	@AppStorage("selectedProfileIndex") var selectedProfileIndex = 0 { didSet { rebuildPrototypes(); updateNowPlaying() } }
 	@AppStorage("placementIndex") var placementIndex = 0 { didSet { rebuildPrototypes() } }
 	
@@ -64,7 +95,6 @@ class AudioEngineManager: ObservableObject {
 	
 	@AppStorage("rainVolume") var rainVolume: Double = 0.0 { didSet { updateVolumes() } }
 	@AppStorage("organicHeartbeatVolume") var organicHeartbeatVolume: Double = 0.0 { didSet { updateVolumes() } }
-	@AppStorage("customFileVolume") var customFileVolume: Double = 0.5 { didSet { updateVolumes() } }
 	
 	@AppStorage("panHeartIndex") var panHeartIndex = 0
 	@AppStorage("panClockIndex") var panClockIndex = 0
@@ -77,8 +107,7 @@ class AudioEngineManager: ObservableObject {
 	@AppStorage("mixWithOthers") var mixWithOthers = false { didSet { applyAudioSessionSettings() } }
 	@AppStorage("useWhisper") var useWhisper = false
 	
-	@AppStorage("customFileBookmark") var customFileBookmark: Data?
-	@Published var customFileName: String = "None"
+	@AppStorage("savedTracksJSON") var savedTracksJSON: Data = Data()
 	
 	// Generator Buffers
 	private var lubL = [Float]()
@@ -108,7 +137,7 @@ class AudioEngineManager: ObservableObject {
 	init() {
 		applyAudioSessionSettings()
 		setupOrganicPlayers()
-		loadCustomFileFromBookmark()
+		loadTracks()
 		setupMediaControls()
 		setupObservers()
 		rebuildPrototypes()
@@ -131,7 +160,9 @@ class AudioEngineManager: ObservableObject {
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
 		rainPlayer?.volume = Float(rainVolume * masterVolume)
 		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume)
-		customFilePlayer?.volume = Float(customFileVolume * masterVolume)
+		for track in importedTracks {
+			track.masterVolume = masterVolume
+		}
 	}
 	
 	private func loadPlayer(filename: String) -> AVAudioPlayer? {
@@ -155,38 +186,104 @@ class AudioEngineManager: ObservableObject {
 		organicHeartbeatPlayer = loadPlayer(filename: "HEARTBEAT")
 	}
 	
-	func loadCustomFile(url: URL) {
+	func addFile(url: URL) {
 		guard url.startAccessingSecurityScopedResource() else { return }
 		defer { url.stopAccessingSecurityScopedResource() }
 		
+		let fm = FileManager.default
+		let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+		let filename = UUID().uuidString + "-" + url.lastPathComponent
+		let dest = docs.appendingPathComponent(filename)
+		
 		do {
-			let data = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-			customFileBookmark = data
-			customFileName = url.lastPathComponent
+			try fm.copyItem(at: url, to: dest)
+			let player = try AVAudioPlayer(contentsOf: dest)
+			player.numberOfLoops = -1
+			player.prepareToPlay()
 			
-			customFilePlayer = try AVAudioPlayer(contentsOf: url)
-			customFilePlayer?.numberOfLoops = -1
-			customFilePlayer?.prepareToPlay()
-			if isPlaying { customFilePlayer?.play() }
+			let track = ImportedTrack(name: url.lastPathComponent, player: player, volume: 0.5, isAppleMusic: false, path: filename)
+			track.masterVolume = masterVolume
+			if isPlaying { player.play() }
+			
+			importedTracks.append(track)
+			saveTracks()
 		} catch {
 			print("File loading error: \(error)")
 		}
 	}
 	
-	private func loadCustomFileFromBookmark() {
-		guard let data = customFileBookmark else { return }
-		var isStale = false
-		do {
-			let url = try URL(resolvingBookmarkData: data, options: .withoutUI, relativeTo: nil, bookmarkDataIsStale: &isStale)
-			if isStale { customFileBookmark = nil; return }
-			if url.startAccessingSecurityScopedResource() {
-				customFileName = url.lastPathComponent
-				customFilePlayer = try AVAudioPlayer(contentsOf: url)
-				customFilePlayer?.numberOfLoops = -1
-				customFilePlayer?.prepareToPlay()
+	func addAppleMusic(items: [MPMediaItem]) {
+		for item in items {
+			guard let url = item.assetURL else { continue }
+			do {
+				let player = try AVAudioPlayer(contentsOf: url)
+				player.numberOfLoops = -1
+				player.prepareToPlay()
+				
+				let track = ImportedTrack(
+					name: item.title ?? "Unknown Track",
+					player: player,
+					volume: 0.5,
+					isAppleMusic: true,
+					path: String(item.persistentID)
+				)
+				track.masterVolume = masterVolume
+				if isPlaying { player.play() }
+				
+				importedTracks.append(track)
+				saveTracks()
+			} catch {
+				print("Failed to load Apple Music track: \(error)")
 			}
-		} catch {
-			customFileBookmark = nil
+		}
+	}
+	
+	func removeTracks(at offsets: IndexSet) {
+		for index in offsets {
+			let track = importedTracks[index]
+			track.player?.stop()
+			if !track.isAppleMusic {
+				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+				let fileURL = docs.appendingPathComponent(track.path)
+				try? FileManager.default.removeItem(at: fileURL)
+			}
+		}
+		importedTracks.remove(atOffsets: offsets)
+		saveTracks()
+	}
+	
+	func saveTracks() {
+		let dataList = importedTracks.map { TrackData(id: $0.id, name: $0.name, path: $0.path, volume: $0.volume, isAppleMusic: $0.isAppleMusic) }
+		if let encoded = try? JSONEncoder().encode(dataList) {
+			savedTracksJSON = encoded
+		}
+	}
+	
+	private func loadTracks() {
+		guard let dataList = try? JSONDecoder().decode([TrackData].self, from: savedTracksJSON) else { return }
+		for data in dataList {
+			var player: AVAudioPlayer?
+			if data.isAppleMusic {
+				if let pid = UInt64(data.path) {
+					let query = MPMediaQuery.songs()
+					let predicate = MPMediaPropertyPredicate(value: pid, forProperty: MPMediaItemPropertyPersistentID)
+					query.addFilterPredicate(predicate)
+					if let item = query.items?.first, let url = item.assetURL {
+						player = try? AVAudioPlayer(contentsOf: url)
+					}
+				}
+			} else {
+				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+				let url = docs.appendingPathComponent(data.path)
+				player = try? AVAudioPlayer(contentsOf: url)
+			}
+			
+			player?.numberOfLoops = -1
+			player?.prepareToPlay()
+			
+			let track = ImportedTrack(id: data.id, name: data.name, player: player, volume: data.volume, isAppleMusic: data.isAppleMusic, path: data.path)
+			track.masterVolume = masterVolume
+			importedTracks.append(track)
 		}
 	}
 	
@@ -572,7 +669,7 @@ class AudioEngineManager: ObservableObject {
 			engine.pause()
 			rainPlayer?.pause()
 			organicHeartbeatPlayer?.pause()
-			customFilePlayer?.pause()
+			for track in importedTracks { track.player?.pause() }
 			musicPlayer.pause()
 			isPlaying = false
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
@@ -583,7 +680,7 @@ class AudioEngineManager: ObservableObject {
 				try engine.start()
 				rainPlayer?.play()
 				organicHeartbeatPlayer?.play()
-				customFilePlayer?.play()
+				for track in importedTracks { track.player?.play() }
 				musicPlayer.play()
 				isPlaying = true
 				updateNowPlaying()
@@ -655,6 +752,7 @@ class AudioEngineManager: ObservableObject {
 					try self.engine.start()
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
+					for track in self.importedTracks { track.player?.play() }
 				} catch {
 					print("Failed to restart engine after config change: \(error)")
 				}
@@ -665,41 +763,117 @@ class AudioEngineManager: ObservableObject {
 
 // MARK: - Views
 
+struct MediaPicker: UIViewControllerRepresentable {
+	@Binding var isPresented: Bool
+	var onPicked: (MPMediaItemCollection) -> Void
+
+	func makeUIViewController(context: Context) -> MPMediaPickerController {
+		let picker = MPMediaPickerController(mediaTypes: .anyAudio)
+		picker.allowsPickingMultipleItems = true
+		picker.showsCloudItems = false
+		picker.delegate = context.coordinator
+		return picker
+	}
+
+	func updateUIViewController(_ uiViewController: MPMediaPickerController, context: Context) {}
+
+	func makeCoordinator() -> Coordinator {
+		Coordinator(self)
+	}
+
+	class Coordinator: NSObject, MPMediaPickerControllerDelegate {
+		let parent: MediaPicker
+		
+		init(_ parent: MediaPicker) {
+			self.parent = parent
+		}
+		
+		func mediaPicker(_ mediaPicker: MPMediaPickerController, didPickMediaItems mediaItemCollection: MPMediaItemCollection) {
+			parent.onPicked(mediaItemCollection)
+			parent.isPresented = false
+		}
+		
+		func mediaPickerDidCancel(_ mediaPicker: MPMediaPickerController) {
+			parent.isPresented = false
+		}
+	}
+}
+
+struct TrackRowView: View {
+	@ObservedObject var track: ImportedTrack
+	@ObservedObject var engine: AudioEngineManager
+	
+	var body: some View {
+		VStack(alignment: .leading) {
+			Text(track.name)
+				.font(.headline)
+			Slider(value: $track.volume, in: 0...1)
+				.accessibilityLabel("\(track.name) Volume")
+				.onChange(of: track.volume) { _ in
+					engine.saveTracks()
+				}
+		}
+		.padding(.vertical, 4)
+	}
+}
+
 struct SoundscapeView: View {
 	@ObservedObject var engine: AudioEngineManager
 	@State private var showingFilePicker = false
+	@State private var showingMusicPicker = false
 	
 	var body: some View {
-		Form {
-			Section(header: Text("Organic Elements").accessibilityHidden(true)) {
-				VStack(alignment: .leading) {
-					Text("Rain Volume").accessibilityHidden(true)
-					Slider(value: $engine.rainVolume, in: 0...1)
-						.accessibilityLabel("Rain Volume")
+		NavigationView {
+			Form {
+				Section(header: Text("Organic Elements").accessibilityHidden(true)) {
+					VStack(alignment: .leading) {
+						Text("Rain Volume").accessibilityHidden(true)
+						Slider(value: $engine.rainVolume, in: 0...1)
+							.accessibilityLabel("Rain Volume")
+					}
+					VStack(alignment: .leading) {
+						Text("Organic Heartbeat Volume").accessibilityHidden(true)
+						Slider(value: $engine.organicHeartbeatVolume, in: 0...1)
+							.accessibilityLabel("Organic Heartbeat Volume")
+					}
 				}
-				VStack(alignment: .leading) {
-					Text("Organic Heartbeat Volume").accessibilityHidden(true)
-					Slider(value: $engine.organicHeartbeatVolume, in: 0...1)
-						.accessibilityLabel("Organic Heartbeat Volume")
+				
+				Section(header: Text("Imported Audio")) {
+					if engine.importedTracks.isEmpty {
+						Text("No files imported.")
+							.foregroundColor(.secondary)
+					} else {
+						ForEach(engine.importedTracks) { track in
+							TrackRowView(track: track, engine: engine)
+						}
+						.onDelete { offsets in
+							engine.removeTracks(at: offsets)
+						}
+					}
 				}
 			}
-			
-			Section(header: Text("External Sources")) {
-				HStack {
-					Text("Files: \(engine.customFileName)")
-					Spacer()
-					Button("Browse") { showingFilePicker = true }
-				}
-				VStack(alignment: .leading) {
-					Slider(value: $engine.customFileVolume, in: 0...1)
-						.accessibilityLabel("Custom File Volume")
+			.navigationTitle("Soundscape")
+			.navigationBarTitleDisplayMode(.inline)
+			.toolbar {
+				ToolbarItem(placement: .navigationBarLeading) {
+					Menu("Import") {
+						Button("From Files") { showingFilePicker = true }
+						Button("From Apple Music") { showingMusicPicker = true }
+					}
 				}
 			}
-		}
-		.fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.audio]) { result in
-			switch result {
-			case .success(let url): engine.loadCustomFile(url: url)
-			case .failure(let error): print(error)
+			.fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+				switch result {
+				case .success(let urls):
+					for url in urls { engine.addFile(url: url) }
+				case .failure(let error):
+					print(error)
+				}
+			}
+			.sheet(isPresented: $showingMusicPicker) {
+				MediaPicker(isPresented: $showingMusicPicker) { items in
+					engine.addAppleMusic(items: items.items)
+				}
 			}
 		}
 	}
