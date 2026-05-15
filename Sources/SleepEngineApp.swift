@@ -229,18 +229,25 @@ class AudioEngineManager: ObservableObject {
 		try? header.write(to: fileURL)
 	}
 	
+	private func prepareSilentLoopPlayer() {
+		if silentLoopPlayer == nil {
+			let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+			let fileURL = docs.appendingPathComponent("silence.wav")
+			silentLoopPlayer = try? AVAudioPlayer(contentsOf: fileURL)
+			silentLoopPlayer?.numberOfLoops = -1
+			silentLoopPlayer?.volume = 0.01
+		}
+	}
+	
 	private func toggleSilentBackgroundLoop() {
-		if isAlarmOn {
-			if silentLoopPlayer == nil {
-				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-				let fileURL = docs.appendingPathComponent("silence.wav")
-				silentLoopPlayer = try? AVAudioPlayer(contentsOf: fileURL)
-				silentLoopPlayer?.numberOfLoops = -1
-				silentLoopPlayer?.volume = 0.01
-			}
+		if isAlarmOn || isBreathing {
+			prepareSilentLoopPlayer()
 			silentLoopPlayer?.play()
 		} else {
-			silentLoopPlayer?.stop()
+			// Only turn off if neither features are active
+			if !isAlarmOn && !isBreathing {
+				silentLoopPlayer?.stop()
+			}
 		}
 	}
 	
@@ -472,7 +479,9 @@ class AudioEngineManager: ObservableObject {
 		breathingTask?.cancel()
 		isBreathing = true
 		
-		// Request background assertion so Task sleep doesn't get culled upon locking the screen
+		// Run the loop mixer to ensure an unbroken background run pipeline
+		toggleSilentBackgroundLoop()
+		
 		backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "BreathingExercise") { [weak self] in
 			self?.stopBreathingExercise()
 		}
@@ -509,6 +518,7 @@ class AudioEngineManager: ObservableObject {
 		breathingTask?.cancel()
 		isBreathing = false
 		currentBreathingPhase = "Ready"
+		toggleSilentBackgroundLoop()
 		if backgroundTaskID != .invalid {
 			UIApplication.shared.endBackgroundTask(backgroundTaskID)
 			backgroundTaskID = .invalid
@@ -860,7 +870,6 @@ class AudioEngineManager: ObservableObject {
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
 			do {
-				// Re-verify and strictly configure the context session state BEFORE touching the active node pipelines.
 				let session = AVAudioSession.sharedInstance()
 				let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
 				try session.setCategory(.playback, mode: .default, options: options)
@@ -871,10 +880,8 @@ class AudioEngineManager: ObservableObject {
 				engine.prepare()
 				try engine.start()
 				
-				// Added dispatch security buffer to let core AudioGraph finish hardware alignment before pushing data streams
 				DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
 					guard let self = self else { return }
-					// Verify engine didn't immediately stall during line negotiation
 					guard self.engine.isRunning else {
 						print("Engine stalled safely before channel explosion protection triggered.")
 						return
