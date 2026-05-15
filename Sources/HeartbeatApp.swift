@@ -23,8 +23,8 @@ class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	
-	var rainPlayer: AVAudioPlayer?
-	var organicHeartbeatPlayer: AVAudioPlayer?
+	let rainNode = AVAudioPlayerNode()
+	let organicHeartbeatNode = AVAudioPlayerNode()
 	
 	@Published var isPlaying = false
 	
@@ -105,29 +105,34 @@ class AudioEngineManager: ObservableObject {
 	
 	private func updateVolumes() {
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
-		rainPlayer?.volume = Float(rainVolume * masterVolume)
-		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume)
+		rainNode.volume = Float(rainVolume)
+		organicHeartbeatNode.volume = Float(organicHeartbeatVolume)
 	}
 	
 	private func setupOrganicPlayers() {
-		func loadPlayer(filename: String) -> AVAudioPlayer? {
+		engine.attach(rainNode)
+		engine.attach(organicHeartbeatNode)
+		
+		func loadAndSchedule(node: AVAudioPlayerNode, filename: String) {
 			guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else {
 				print("Missing file: \(filename).wav")
-				return nil
+				return
 			}
 			do {
-				let player = try AVAudioPlayer(contentsOf: url)
-				player.numberOfLoops = -1
-				player.prepareToPlay()
-				return player
+				let file = try AVAudioFile(forReading: url)
+				engine.connect(node, to: engine.mainMixerNode, format: file.processingFormat)
+				
+				if let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) {
+					try file.read(into: buffer)
+					node.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)
+				}
 			} catch {
 				print("Could not load \(filename): \(error)")
-				return nil
 			}
 		}
 		
-		rainPlayer = loadPlayer(filename: "RAIN")
-		organicHeartbeatPlayer = loadPlayer(filename: "HEARTBEAT")
+		loadAndSchedule(node: rainNode, filename: "RAIN")
+		loadAndSchedule(node: organicHeartbeatNode, filename: "HEARTBEAT")
 	}
 	
 	private func setupAudio() {
@@ -290,8 +295,8 @@ class AudioEngineManager: ObservableObject {
 			if self.isPlaying {
 				do {
 					try self.engine.start()
-					self.rainPlayer?.play()
-					self.organicHeartbeatPlayer?.play()
+					self.rainNode.play()
+					self.organicHeartbeatNode.play()
 				} catch {
 					print("Failed to restart engine after config change: \(error)")
 				}
@@ -302,8 +307,8 @@ class AudioEngineManager: ObservableObject {
 	func playStop() {
 		if isPlaying {
 			engine.pause()
-			rainPlayer?.pause()
-			organicHeartbeatPlayer?.pause()
+			rainNode.pause()
+			organicHeartbeatNode.pause()
 			isPlaying = false
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
@@ -312,8 +317,8 @@ class AudioEngineManager: ObservableObject {
 				try session.setActive(true)
 				
 				try engine.start()
-				rainPlayer?.play()
-				organicHeartbeatPlayer?.play()
+				rainNode.play()
+				organicHeartbeatNode.play()
 				
 				isPlaying = true
 				updateNowPlaying()
