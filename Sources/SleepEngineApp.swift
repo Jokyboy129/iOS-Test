@@ -184,7 +184,6 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
-	// MARK: - Procedural Silence Generation for Background Keep-Alive
 	private func generateSilentWavIfNeeded() {
 		let fm = FileManager.default
 		let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -203,15 +202,13 @@ class AudioEngineManager: ObservableObject {
 		
 		var header = Data()
 		
-		// RIFF header
 		header.append(contentsOf: [UInt8]("RIFF".utf8))
 		header.append(Data(bytes: [chunkSize], count: 4))
 		header.append(contentsOf: [UInt8]("WAVE".utf8))
 		
-		// fmt subchunk
 		header.append(contentsOf: [UInt8]("fmt ".utf8))
-		header.append(Data(bytes: [Int32(16)], count: 4)) // Subchunk1Size
-		header.append(Data(bytes: [Int16(1)], count: 2))  // AudioFormat PCM
+		header.append(Data(bytes: [Int32(16)], count: 4))
+		header.append(Data(bytes: [Int16(1)], count: 2))
 		header.append(Data(bytes: [numChannels], count: 2))
 		header.append(Data(bytes: [sampleRate], count: 4))
 		
@@ -222,11 +219,9 @@ class AudioEngineManager: ObservableObject {
 		header.append(Data(bytes: [blockAlign], count: 2))
 		header.append(Data(bytes: [bitsPerSample], count: 2))
 		
-		// data subchunk
 		header.append(contentsOf: [UInt8]("data".utf8))
 		header.append(Data(bytes: [subChunk2Size], count: 4))
 		
-		// Pure silence padding payload bytes
 		let silenceData = Data(repeating: 0, count: Int(subChunk2Size))
 		header.append(silenceData)
 		
@@ -240,7 +235,7 @@ class AudioEngineManager: ObservableObject {
 				let fileURL = docs.appendingPathComponent("silence.wav")
 				silentLoopPlayer = try? AVAudioPlayer(contentsOf: fileURL)
 				silentLoopPlayer?.numberOfLoops = -1
-				silentLoopPlayer?.volume = 0.01 // Kept ultra-low, completely unnoticeable
+				silentLoopPlayer?.volume = 0.01
 			}
 			silentLoopPlayer?.play()
 		} else {
@@ -701,12 +696,14 @@ class AudioEngineManager: ObservableObject {
 		let trueSubFreq = max(1, round(config.subFreq * actualBeatDur)) / actualBeatDur
 		let idxStart = Int(config.dubDelay * sampleRate)
 		
-		lubL = [Float](repeating: 0, count: nBeat)
-		lubR = [Float](repeating: 0, count: nBeat)
-		dubL = [Float](repeating: 0, count: nBeat)
-		dubR = [Float](repeating: 0, count: nBeat)
-		lubEnv = [Float](repeating: 0, count: nBeat)
-		dubEnv = [Float](repeating: 0, count: nBeat)
+		let placement = placementOptions[placementIndex]
+		
+		var localLubL = [Float](repeating: 0, count: nBeat)
+		var localLubR = [Float](repeating: 0, count: nBeat)
+		var localDubL = [Float](repeating: 0, count: nBeat)
+		var localDubR = [Float](repeating: 0, count: nBeat)
+		var localLubEnv = [Float](repeating: 0, count: nBeat)
+		var localDubEnv = [Float](repeating: 0, count: nBeat)
 		
 		for i in 0..<nBeat {
 			let t = Double(i) / sampleRate
@@ -714,7 +711,7 @@ class AudioEngineManager: ObservableObject {
 			var lEnv = exp(-config.lubDecay * t)
 			if i < atkSamples { lEnv *= pow(sin((Double.pi / 2.0) * Double(i) / Double(atkSamples)), 2) }
 			if i > nBeat - relSamples { lEnv *= pow(cos((Double.pi / 2.0) * Double(i - (nBeat - relSamples)) / Double(relSamples)), 2) }
-			lubEnv[i] = Float(lEnv)
+			localLubEnv[i] = Float(lEnv)
 			
 			var sLEnv = exp(-config.subDecay * t)
 			if i < atkSamples { sLEnv *= pow(sin((Double.pi / 2.0) * Double(i) / Double(atkSamples)), 2) }
@@ -743,39 +740,45 @@ class AudioEngineManager: ObservableObject {
 				let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
 				dub = sin(dubPhase) * dEnv
 			}
-			dubEnv[i] = Float(dEnv)
+			localDubEnv[i] = Float(dEnv)
 			
-			let placement = placementOptions[placementIndex]
 			let combinedLub = Float((lub + subLub))
 			let combinedDub = Float((dub + subDub))
 			
 			if placement == "Center Beats & Flow" {
-				lubL[i] = combinedLub * 0.85
-				lubR[i] = combinedLub * 0.85
-				dubL[i] = combinedDub * 0.85
-				dubR[i] = combinedDub * 0.85
+				localLubL[i] = combinedLub * 0.85
+				localLubR[i] = combinedLub * 0.85
+				localDubL[i] = combinedDub * 0.85
+				localDubR[i] = combinedDub * 0.85
 			} else if placement == "Lub Left Ear / Dub Right Ear" {
-				lubL[i] = combinedLub; lubR[i] = 0; dubL[i] = 0; dubR[i] = combinedDub
+				localLubL[i] = combinedLub; localLubR[i] = 0; localDubL[i] = 0; localDubR[i] = combinedDub
 			} else {
-				lubL[i] = 0; lubR[i] = combinedLub; dubL[i] = combinedDub; dubR[i] = 0
+				localLubL[i] = 0; localLubR[i] = combinedLub; localDubL[i] = combinedDub; localDubR[i] = 0
 			}
 		}
 		
 		var globalPeak: Float = 0
 		for i in 0..<nBeat {
-			let peakL = abs(lubL[i] + dubL[i])
-			let peakR = abs(lubR[i] + dubR[i])
+			let peakL = abs(localLubL[i] + localDubL[i])
+			let peakR = abs(localLubR[i] + localDubR[i])
 			if peakL > globalPeak { globalPeak = peakL }
 			if peakR > globalPeak { globalPeak = peakR }
 		}
 		if globalPeak > 0 {
 			for i in 0..<nBeat {
-				lubL[i] = (lubL[i] / globalPeak) * 0.70
-				lubR[i] = (lubR[i] / globalPeak) * 0.70
-				dubL[i] = (dubL[i] / globalPeak) * 0.70
-				dubR[i] = (dubR[i] / globalPeak) * 0.70
+				localLubL[i] = (localLubL[i] / globalPeak) * 0.70
+				localLubR[i] = (localLubR[i] / globalPeak) * 0.70
+				localDubL[i] = (localDubL[i] / globalPeak) * 0.70
+				localDubR[i] = (localDubR[i] / globalPeak) * 0.70
 			}
 		}
+		
+		self.lubL = localLubL
+		self.lubR = localLubR
+		self.dubL = localDubL
+		self.dubR = localDubR
+		self.lubEnv = localLubEnv
+		self.dubEnv = localDubEnv
 		
 		nNoise = Int(sampleRate * 5)
 		if brownL.isEmpty {
@@ -832,6 +835,7 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
+	// Stabilized play loop utilizing explicit synchronization pauses to prevent engine halts
 	func playStop() {
 		if isPlaying {
 			engine.pause()
@@ -845,15 +849,24 @@ class AudioEngineManager: ObservableObject {
 			do {
 				try AVAudioSession.sharedInstance().setActive(true)
 				if sourceNode == nil { setupAudio() }
+				
+				engine.prepare()
 				try engine.start()
-				rainPlayer?.play()
-				organicHeartbeatPlayer?.play()
-				for track in importedTracks { track.player?.play() }
-				musicPlayer.play()
-				isPlaying = true
-				updateNowPlaying()
-				UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
-			} catch { print("Engine start error: \(error)") }
+				
+				// Enforces an active 50ms async thread cushion. Allows the core I/O architecture to sync channels before audio fires.
+				DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+					guard let self = self else { return }
+					self.rainPlayer?.play()
+					self.organicHeartbeatPlayer?.play()
+					for track in self.importedTracks { track.player?.play() }
+					self.musicPlayer.play()
+					self.isPlaying = true
+					self.updateNowPlaying()
+					UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
+				}
+			} catch { 
+				print("Engine start error: \(error)") 
+			}
 		}
 	}
 	
