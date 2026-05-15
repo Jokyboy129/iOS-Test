@@ -88,10 +88,11 @@ class AudioEngineManager: ObservableObject {
 	
 	@AppStorage("masterVolume") var masterVolume: Double = 1.0 { didSet { updateVolumes() } }
 	
-	@AppStorage("heartbeatVolume") var heartbeatVolume: Double = 0.0
-	@AppStorage("clockVolume") var clockVolume: Double = 0.0
-	@AppStorage("brownVolume") var brownVolume: Double = 0.0
-	@AppStorage("breathVolume") var breathVolume: Double = 0.0
+	// Smart Engine Monitoring applied to procedural volumes
+	@AppStorage("heartbeatVolume") var heartbeatVolume: Double = 0.0 { didSet { evaluateEngineState() } }
+	@AppStorage("clockVolume") var clockVolume: Double = 0.0 { didSet { evaluateEngineState() } }
+	@AppStorage("brownVolume") var brownVolume: Double = 0.0 { didSet { evaluateEngineState() } }
+	@AppStorage("breathVolume") var breathVolume: Double = 0.0 { didSet { evaluateEngineState() } }
 	
 	@AppStorage("rainVolume") var rainVolume: Double = 0.0 { didSet { updateVolumes() } }
 	@AppStorage("organicHeartbeatVolume") var organicHeartbeatVolume: Double = 0.0 { didSet { updateVolumes() } }
@@ -181,6 +182,26 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
+	// MARK: - Smart Engine Toggle
+	private func evaluateEngineState() {
+		guard isPlaying else { return }
+		
+		let proceduralTotal = heartbeatVolume + clockVolume + brownVolume + breathVolume
+		if proceduralTotal == 0 {
+			if engine.isRunning {
+				engine.pause()
+			}
+		} else {
+			if !engine.isRunning {
+				do {
+					try engine.start()
+				} catch {
+					print("Failed to auto-resume engine: \(error)")
+				}
+			}
+		}
+	}
+	
 	private func loadPlayer(filename: String) -> AVAudioPlayer? {
 		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else {
 			print("Missing built-in file: \(filename).wav")
@@ -247,7 +268,7 @@ class AudioEngineManager: ObservableObject {
 					alarmTrackPath = String(item.persistentID)
 					alarmTrackIsAppleMusic = true
 					alarmTrackNameStorage = item.title ?? "Unknown Track"
-					break // Only one alarm track allowed
+					break
 				} else {
 					let track = ImportedTrack(
 						name: item.title ?? "Unknown Track",
@@ -364,7 +385,7 @@ class AudioEngineManager: ObservableObject {
 		
 		let initialMaster = masterVolume
 		var fadeStep = 0
-		let totalSteps = 300 // 30 seconds fade in (0.1s steps)
+		let totalSteps = 300
 		
 		fadeTimer?.invalidate()
 		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
@@ -382,7 +403,7 @@ class AudioEngineManager: ObservableObject {
 				timer.invalidate()
 				if self.isPlaying {
 					self.playStop()
-					self.masterVolume = initialMaster // Restore master volume strictly in memory for UI
+					self.masterVolume = initialMaster
 				}
 			}
 		}
@@ -778,7 +799,12 @@ class AudioEngineManager: ObservableObject {
 			do {
 				try AVAudioSession.sharedInstance().setActive(true)
 				if sourceNode == nil { setupAudio() }
-				try engine.start()
+				
+				let proceduralTotal = heartbeatVolume + clockVolume + brownVolume + breathVolume
+				if proceduralTotal > 0 {
+					try engine.start()
+				}
+				
 				rainPlayer?.play()
 				organicHeartbeatPlayer?.play()
 				for track in importedTracks { track.player?.play() }
@@ -850,7 +876,10 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self else { return }
 			if self.isPlaying {
 				do {
-					try self.engine.start()
+					let proceduralTotal = self.heartbeatVolume + self.clockVolume + self.brownVolume + self.breathVolume
+					if proceduralTotal > 0 {
+						try self.engine.start()
+					}
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.player?.play() }
