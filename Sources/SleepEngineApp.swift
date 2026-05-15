@@ -229,22 +229,17 @@ class AudioEngineManager: ObservableObject {
 		try? header.write(to: fileURL)
 	}
 	
-	private func prepareSilentLoopPlayer() {
-		if silentLoopPlayer == nil {
-			let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-			let fileURL = docs.appendingPathComponent("silence.wav")
-			silentLoopPlayer = try? AVAudioPlayer(contentsOf: fileURL)
-			silentLoopPlayer?.numberOfLoops = -1
-			silentLoopPlayer?.volume = 0.01
-		}
-	}
-	
 	private func toggleSilentBackgroundLoop() {
 		if isAlarmOn || isBreathing {
-			prepareSilentLoopPlayer()
+			if silentLoopPlayer == nil {
+				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+				let fileURL = docs.appendingPathComponent("silence.wav")
+				silentLoopPlayer = try? AVAudioPlayer(contentsOf: fileURL)
+				silentLoopPlayer?.numberOfLoops = -1
+				silentLoopPlayer?.volume = 0.01
+			}
 			silentLoopPlayer?.play()
 		} else {
-			// Only turn off if neither features are active
 			if !isAlarmOn && !isBreathing {
 				silentLoopPlayer?.stop()
 			}
@@ -479,7 +474,6 @@ class AudioEngineManager: ObservableObject {
 		breathingTask?.cancel()
 		isBreathing = true
 		
-		// Run the loop mixer to ensure an unbroken background run pipeline
 		toggleSilentBackgroundLoop()
 		
 		backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "BreathingExercise") { [weak self] in
