@@ -2,6 +2,9 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 import UniformTypeIdentifiers
+#if canImport(AlarmKit)
+import AlarmKit
+#endif
 
 struct HeartbeatProfile: Hashable, Codable {
 	let name: String
@@ -88,7 +91,6 @@ class AudioEngineManager: ObservableObject {
 	
 	@AppStorage("masterVolume") var masterVolume: Double = 1.0 { didSet { updateVolumes() } }
 	
-	// Smart Engine Monitoring applied to procedural volumes
 	@AppStorage("heartbeatVolume") var heartbeatVolume: Double = 0.0 { didSet { evaluateEngineState() } }
 	@AppStorage("clockVolume") var clockVolume: Double = 0.0 { didSet { evaluateEngineState() } }
 	@AppStorage("brownVolume") var brownVolume: Double = 0.0 { didSet { evaluateEngineState() } }
@@ -112,8 +114,8 @@ class AudioEngineManager: ObservableObject {
 	
 	// Alarm Storage & State
 	@AppStorage("alarmTimeRef") var alarmTimeRef: Double = Date().timeIntervalSince1970
-	@Published var alarmTime: Date = Date() { didSet { alarmTimeRef = alarmTime.timeIntervalSince1970 } }
-	@Published var isAlarmOn: Bool = false
+	@Published var alarmTime: Date = Date() { didSet { alarmTimeRef = alarmTime.timeIntervalSince1970; syncAlarmState() } }
+	@Published var isAlarmOn: Bool = false { didSet { syncAlarmState() } }
 	
 	@AppStorage("alarmTrackPath") var alarmTrackPath: String = ""
 	@AppStorage("alarmTrackIsAppleMusic") var alarmTrackIsAppleMusic: Bool = false
@@ -122,6 +124,7 @@ class AudioEngineManager: ObservableObject {
 	var alarmPlayer: AVAudioPlayer?
 	var alarmTimer: Timer?
 	var fadeTimer: Timer?
+	private var activeSystemAlarmID: UUID?
 	
 	// Generator Buffers
 	private var lubL = [Float]()
@@ -182,22 +185,14 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
-	// MARK: - Smart Engine Toggle
 	private func evaluateEngineState() {
 		guard isPlaying else { return }
-		
 		let proceduralTotal = heartbeatVolume + clockVolume + brownVolume + breathVolume
 		if proceduralTotal == 0 {
-			if engine.isRunning {
-				engine.pause()
-			}
+			if engine.isRunning { engine.pause() }
 		} else {
 			if !engine.isRunning {
-				do {
-					try engine.start()
-				} catch {
-					print("Failed to auto-resume engine: \(error)")
-				}
+				try? engine.start()
 			}
 		}
 	}
@@ -243,6 +238,7 @@ class AudioEngineManager: ObservableObject {
 				alarmTrackPath = filename
 				alarmTrackIsAppleMusic = false
 				alarmTrackNameStorage = url.lastPathComponent
+				syncAlarmState()
 			} else {
 				let track = ImportedTrack(name: url.lastPathComponent, player: player, volume: 0.5, isAppleMusic: false, path: filename)
 				track.masterVolume = masterVolume
@@ -268,6 +264,7 @@ class AudioEngineManager: ObservableObject {
 					alarmTrackPath = String(item.persistentID)
 					alarmTrackIsAppleMusic = true
 					alarmTrackNameStorage = item.title ?? "Unknown Track"
+					syncAlarmState()
 					break
 				} else {
 					let track = ImportedTrack(
@@ -360,21 +357,28 @@ class AudioEngineManager: ObservableObject {
 	private func startAlarmMonitor() {
 		alarmTimer?.invalidate()
 		alarmTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-			self?.checkAlarm()
+			self?.checkInAppAlarm()
 		}
 	}
 	
-	private func checkAlarm() {
+	private func checkInAppAlarm() {
 		guard isAlarmOn else { return }
+		
+		#if canImport(AlarmKit)
+		if #available(iOS 26.0, *) {
+			return // Handled at system level via AlarmKit
+		}
+		#endif
+		
 		let now = Date()
 		let cal = Calendar.current
 		if cal.component(.hour, from: now) == cal.component(.hour, from: alarmTime) &&
 		   cal.component(.minute, from: now) == cal.component(.minute, from: alarmTime) {
-			triggerAlarm()
+			triggerInAppAlarm()
 		}
 	}
 	
-	private func triggerAlarm() {
+	private func triggerInAppAlarm() {
 		isAlarmOn = false
 		do {
 			try AVAudioSession.sharedInstance().setActive(true)
@@ -408,6 +412,78 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 	}
+	
+	private func syncAlarmState() {
+		#if canImport(AlarmKit)
+		if #available(iOS 26.0, *) {
+			Task {
+				await updateAlarmKitSchedule()
+			}
+			return
+		}
+		#endif
+	}
+	
+	#if canImport(AlarmKit)
+	@available(iOS 26.0, *)
+	private func updateAlarmKitSchedule() async {
+		if let existingID = activeSystemAlarmID {
+			try? await AlarmManager.shared.stop(id: existingID)
+			activeSystemAlarmID = nil
+		}
+		
+		guard isAlarmOn else { return }
+		
+		do {
+			let status = try await AlarmManager.shared.requestAuthorization()
+			guard status == .authorized else { return }
+			
+			let stopButton = AlarmButton(text: "Dismiss", textColor: .white, systemImageName: "stop.circle.fill")
+			let snoozeButton = AlarmButton(text: "Snooze", textColor: .white, systemImageName: "repeat.circle.fill")
+			
+			let alertPresentation = AlarmPresentation.Alert(
+				title: "Sleep Engine Alarm",
+				stopButton: stopButton,
+				secondaryButton: snoozeButton,
+				secondaryButtonBehavior: .countdown
+			)
+			
+			let presentation = AlarmPresentation(alert: alertPresentation, countdown: nil)
+			let attributes = AlarmAttributes(presentation: presentation, tintColor: .blue)
+			
+			let cal = Calendar.current
+			let hour = cal.component(.hour, from: alarmTime)
+			let minute = cal.component(.minute, from: alarmTime)
+			
+			let relativeTime = Alarm.Schedule.Relative.Time(hour: hour, minute: minute)
+			let recurrence = Alarm.Schedule.Relative.Recurrence.oneTime
+			let schedule = Alarm.Schedule.relative(Alarm.Schedule.Relative(time: relativeTime, repeats: recurrence))
+			
+			var alarmSound: AlarmConfiguration.AlarmSound = .default
+			if !alarmTrackPath.isEmpty && !alarmTrackIsAppleMusic {
+				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+				let fullURL = docs.appendingPathComponent(alarmTrackPath)
+				alarmSound = .named(fullURL.lastPathComponent)
+			}
+			
+			let configuration = AlarmManager.AlarmConfiguration(
+				countdownDuration: Alarm.CountdownDuration(preAlert: nil, postAlert: 300),
+				schedule: schedule,
+				attributes: attributes,
+				secondaryIntent: nil,
+				sound: alarmSound
+			)
+			
+			let newID = UUID()
+			let scheduledID = try await AlarmManager.shared.schedule(id: newID, configuration: configuration)
+			await MainActor.run {
+				self.activeSystemAlarmID = scheduledID
+			}
+		} catch {
+			print("AlarmKit error: \(error)")
+		}
+	}
+	#endif
 	
 	func playBreathingCue(type: String) {
 		let suffix = useWhisper ? "_WHISPER" : ""
