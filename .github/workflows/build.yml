@@ -19,8 +19,8 @@ jobs:
       - name: Build Unsigned App
         run: |
           xcodebuild clean build \
-            -project ASMRHeartbeat.xcodeproj \
-            -scheme ASMRHeartbeat \
+            -project SleepEngine.xcodeproj \
+            -scheme SleepEngine \
             -configuration Release \
             -sdk iphoneos \
             SYMROOT=$PWD/build \
@@ -33,11 +33,11 @@ jobs:
       - name: Package into IPA
         run: |
           mkdir -p Payload
-          cp -r build/Release-iphoneos/ASMRHeartbeat.app Payload/
-          zip -r ASMRHeartbeat.ipa Payload
+          cp -r build/Release-iphoneos/SleepEngine.app Payload/
+          zip -r SleepEngine.ipa Payload
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ASMRHeartbeat-App
-          path: ASMRHeartbeat.ipa
+          name: SleepEngine-App
+          path: SleepEngine.ipa

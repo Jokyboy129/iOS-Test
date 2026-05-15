@@ -88,7 +88,7 @@ class AudioEngineManager: ObservableObject {
 	
 	@AppStorage("masterVolume") var masterVolume: Double = 1.0 { didSet { updateVolumes() } }
 	
-	@AppStorage("heartbeatVolume") var heartbeatVolume: Double = 1.0
+	@AppStorage("heartbeatVolume") var heartbeatVolume: Double = 0.0
 	@AppStorage("clockVolume") var clockVolume: Double = 0.0
 	@AppStorage("brownVolume") var brownVolume: Double = 0.0
 	@AppStorage("breathVolume") var breathVolume: Double = 0.0
@@ -108,6 +108,19 @@ class AudioEngineManager: ObservableObject {
 	@AppStorage("useWhisper") var useWhisper = false
 	
 	@AppStorage("savedTracksJSON") var savedTracksJSON: Data = Data()
+	
+	// Alarm Storage & State
+	@AppStorage("alarmTimeRef") var alarmTimeRef: Double = Date().timeIntervalSince1970
+	@Published var alarmTime: Date = Date() { didSet { alarmTimeRef = alarmTime.timeIntervalSince1970 } }
+	@Published var isAlarmOn: Bool = false
+	
+	@AppStorage("alarmTrackPath") var alarmTrackPath: String = ""
+	@AppStorage("alarmTrackIsAppleMusic") var alarmTrackIsAppleMusic: Bool = false
+	@AppStorage("alarmTrackNameStorage") var alarmTrackNameStorage: String = "None"
+	
+	var alarmPlayer: AVAudioPlayer?
+	var alarmTimer: Timer?
+	var fadeTimer: Timer?
 	
 	// Generator Buffers
 	private var lubL = [Float]()
@@ -135,13 +148,16 @@ class AudioEngineManager: ObservableObject {
 	@Published var currentBreathingPhase: String = "Ready"
 	
 	init() {
+		alarmTime = Date(timeIntervalSince1970: alarmTimeRef)
 		applyAudioSessionSettings()
 		setupOrganicPlayers()
 		loadTracks()
+		loadAlarmTrack()
 		setupMediaControls()
 		setupObservers()
 		rebuildPrototypes()
 		updateVolumes()
+		startAlarmMonitor()
 	}
 	
 	private func applyAudioSessionSettings() {
@@ -186,7 +202,7 @@ class AudioEngineManager: ObservableObject {
 		organicHeartbeatPlayer = loadPlayer(filename: "HEARTBEAT")
 	}
 	
-	func addFile(url: URL) {
+	func addFile(url: URL, isAlarm: Bool = false) {
 		guard url.startAccessingSecurityScopedResource() else { return }
 		defer { url.stopAccessingSecurityScopedResource() }
 		
@@ -201,18 +217,24 @@ class AudioEngineManager: ObservableObject {
 			player.numberOfLoops = -1
 			player.prepareToPlay()
 			
-			let track = ImportedTrack(name: url.lastPathComponent, player: player, volume: 0.5, isAppleMusic: false, path: filename)
-			track.masterVolume = masterVolume
-			if isPlaying { player.play() }
-			
-			importedTracks.append(track)
-			saveTracks()
+			if isAlarm {
+				alarmPlayer = player
+				alarmTrackPath = filename
+				alarmTrackIsAppleMusic = false
+				alarmTrackNameStorage = url.lastPathComponent
+			} else {
+				let track = ImportedTrack(name: url.lastPathComponent, player: player, volume: 0.5, isAppleMusic: false, path: filename)
+				track.masterVolume = masterVolume
+				if isPlaying { player.play() }
+				importedTracks.append(track)
+				saveTracks()
+			}
 		} catch {
 			print("File loading error: \(error)")
 		}
 	}
 	
-	func addAppleMusic(items: [MPMediaItem]) {
+	func addAppleMusic(items: [MPMediaItem], isAlarm: Bool = false) {
 		for item in items {
 			guard let url = item.assetURL else { continue }
 			do {
@@ -220,18 +242,25 @@ class AudioEngineManager: ObservableObject {
 				player.numberOfLoops = -1
 				player.prepareToPlay()
 				
-				let track = ImportedTrack(
-					name: item.title ?? "Unknown Track",
-					player: player,
-					volume: 0.5,
-					isAppleMusic: true,
-					path: String(item.persistentID)
-				)
-				track.masterVolume = masterVolume
-				if isPlaying { player.play() }
-				
-				importedTracks.append(track)
-				saveTracks()
+				if isAlarm {
+					alarmPlayer = player
+					alarmTrackPath = String(item.persistentID)
+					alarmTrackIsAppleMusic = true
+					alarmTrackNameStorage = item.title ?? "Unknown Track"
+					break // Only one alarm track allowed
+				} else {
+					let track = ImportedTrack(
+						name: item.title ?? "Unknown Track",
+						player: player,
+						volume: 0.5,
+						isAppleMusic: true,
+						path: String(item.persistentID)
+					)
+					track.masterVolume = masterVolume
+					if isPlaying { player.play() }
+					importedTracks.append(track)
+					saveTracks()
+				}
 			} catch {
 				print("Failed to load Apple Music track: \(error)")
 			}
@@ -284,6 +313,78 @@ class AudioEngineManager: ObservableObject {
 			let track = ImportedTrack(id: data.id, name: data.name, player: player, volume: data.volume, isAppleMusic: data.isAppleMusic, path: data.path)
 			track.masterVolume = masterVolume
 			importedTracks.append(track)
+		}
+	}
+	
+	private func loadAlarmTrack() {
+		guard !alarmTrackPath.isEmpty else { return }
+		if alarmTrackIsAppleMusic {
+			if let pid = UInt64(alarmTrackPath) {
+				let query = MPMediaQuery.songs()
+				let predicate = MPMediaPropertyPredicate(value: pid, forProperty: MPMediaItemPropertyPersistentID)
+				query.addFilterPredicate(predicate)
+				if let item = query.items?.first, let url = item.assetURL {
+					alarmPlayer = try? AVAudioPlayer(contentsOf: url)
+				}
+			}
+		} else {
+			let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+			let url = docs.appendingPathComponent(alarmTrackPath)
+			alarmPlayer = try? AVAudioPlayer(contentsOf: url)
+		}
+		alarmPlayer?.numberOfLoops = -1
+		alarmPlayer?.prepareToPlay()
+	}
+	
+	private func startAlarmMonitor() {
+		alarmTimer?.invalidate()
+		alarmTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+			self?.checkAlarm()
+		}
+	}
+	
+	private func checkAlarm() {
+		guard isAlarmOn else { return }
+		let now = Date()
+		let cal = Calendar.current
+		if cal.component(.hour, from: now) == cal.component(.hour, from: alarmTime) &&
+		   cal.component(.minute, from: now) == cal.component(.minute, from: alarmTime) {
+			triggerAlarm()
+		}
+	}
+	
+	private func triggerAlarm() {
+		isAlarmOn = false
+		do {
+			try AVAudioSession.sharedInstance().setActive(true)
+		} catch {}
+		
+		alarmPlayer?.volume = 0
+		alarmPlayer?.play()
+		
+		let initialMaster = masterVolume
+		var fadeStep = 0
+		let totalSteps = 300 // 30 seconds fade in (0.1s steps)
+		
+		fadeTimer?.invalidate()
+		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+			guard let self = self else { return }
+			fadeStep += 1
+			let progress = Double(fadeStep) / Double(totalSteps)
+			
+			self.alarmPlayer?.volume = Float(progress * 1.0)
+			
+			if self.isPlaying {
+				self.masterVolume = initialMaster * (1.0 - progress)
+			}
+			
+			if fadeStep >= totalSteps {
+				timer.invalidate()
+				if self.isPlaying {
+					self.playStop()
+					self.masterVolume = initialMaster // Restore master volume strictly in memory for UI
+				}
+			}
 		}
 	}
 	
@@ -714,7 +815,7 @@ class AudioEngineManager: ObservableObject {
 	private func updateNowPlaying() {
 		var nowPlayingInfo = [String: Any]()
 		nowPlayingInfo[MPMediaItemPropertyTitle] = profiles[selectedProfileIndex].name
-		nowPlayingInfo[MPMediaItemPropertyArtist] = "ASMR Sleep Engine"
+		nowPlayingInfo[MPMediaItemPropertyArtist] = "Sleep Engine"
 		MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
 	}
 	
@@ -970,13 +1071,61 @@ struct BreathingView: View {
 	}
 }
 
+struct AlarmView: View {
+	@ObservedObject var engine: AudioEngineManager
+	@State private var showingFilePicker = false
+	@State private var showingMusicPicker = false
+	
+	var body: some View {
+		NavigationView {
+			Form {
+				Section(header: Text("Alarm Time")) {
+					DatePicker("Time", selection: $engine.alarmTime, displayedComponents: .hourAndMinute)
+						.datePickerStyle(WheelDatePickerStyle())
+						.accessibilityLabel("Set Alarm Time")
+				}
+				
+				Section(header: Text("Alarm Track")) {
+					HStack {
+						Text(engine.alarmTrackNameStorage)
+						Spacer()
+						Menu("Select Sound") {
+							Button("From Files") { showingFilePicker = true }
+							Button("From Apple Music") { showingMusicPicker = true }
+						}
+					}
+				}
+				
+				Section {
+					Toggle("Alarm Enabled", isOn: $engine.isAlarmOn)
+				}
+			}
+			.navigationTitle("Alarm")
+			.navigationBarTitleDisplayMode(.inline)
+			.fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+				switch result {
+				case .success(let urls):
+					if let url = urls.first { engine.addFile(url: url, isAlarm: true) }
+				case .failure(let error):
+					print(error)
+				}
+			}
+			.sheet(isPresented: $showingMusicPicker) {
+				MediaPicker(isPresented: $showingMusicPicker) { items in
+					engine.addAppleMusic(items: items.items, isAlarm: true)
+				}
+			}
+		}
+	}
+}
+
 struct SettingsView: View {
 	@ObservedObject var engine: AudioEngineManager
 	var body: some View {
 		Form {
 			Section(header: Text("Audio Behavior")) {
 				Toggle("Mix with other apps", isOn: $engine.mixWithOthers)
-					.accessibilityHint("Allows ASMR Engine to play while watching YouTube or listening to podcasts.")
+					.accessibilityHint("Allows Sleep Engine to play while watching YouTube or listening to podcasts.")
 			}
 			Section(header: Text("Voice Preferences")) {
 				Toggle("Use Whispered Breathing Cues", isOn: $engine.useWhisper)
@@ -990,21 +1139,11 @@ struct ContentView: View {
 	
 	var body: some View {
 		VStack(spacing: 0) {
-			TabView {
-				SoundscapeView(engine: engine)
-					.tabItem { Label("Soundscape", systemImage: "waveform") }
-				GeneratorView(engine: engine)
-					.tabItem { Label("Generator", systemImage: "bolt.heart") }
-				BreathingView(engine: engine)
-					.tabItem { Label("Breathing", systemImage: "lungs") }
-				SettingsView(engine: engine)
-					.tabItem { Label("Settings", systemImage: "gear") }
-			}
-			
 			VStack {
 				Slider(value: $engine.masterVolume, in: 0...1)
 					.accessibilityLabel("Master Output Volume")
 					.padding(.horizontal)
+					.padding(.top, 10)
 				
 				Button(action: { engine.playStop() }) {
 					Text(engine.isPlaying ? "Stop All Audio" : "Play Master")
@@ -1014,15 +1153,28 @@ struct ContentView: View {
 						.cornerRadius(10)
 				}
 				.padding(.horizontal)
+				.padding(.bottom, 10)
 			}
-			.padding(.bottom)
-			.background(Color(UIColor.systemBackground).shadow(radius: 2))
+			.background(Color(UIColor.secondarySystemBackground).shadow(radius: 1))
+			
+			TabView {
+				SoundscapeView(engine: engine)
+					.tabItem { Label("Soundscape", systemImage: "waveform") }
+				GeneratorView(engine: engine)
+					.tabItem { Label("Generator", systemImage: "bolt.heart") }
+				BreathingView(engine: engine)
+					.tabItem { Label("Breathing", systemImage: "lungs") }
+				AlarmView(engine: engine)
+					.tabItem { Label("Alarm", systemImage: "alarm") }
+				SettingsView(engine: engine)
+					.tabItem { Label("Settings", systemImage: "gear") }
+			}
 		}
 	}
 }
 
 @main
-struct ASMRHeartbeatApp: App {
+struct SleepEngineApp: App {
 	var body: some Scene {
 		WindowGroup {
 			ContentView()
