@@ -17,8 +17,7 @@ targets:
           - UIInterfaceOrientationPortrait
         UIBackgroundModes:
           - audio
-        NSAppleMusicUsageDescription: "Required to play your selected Apple Music tracks in the ASMR Soundscape and for Alarms."
-        NSAlarmKitUsageDescription: "Required to register system-level wake up alarms with native device support."
+        NSAppleMusicUsageDescription: "Required to play your selected Apple Music tracks in the ASMR Soundscape."
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.localdev.SleepEngine
       MARKETING_VERSION: 1.0

@@ -2,9 +2,6 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 import UniformTypeIdentifiers
-#if canImport(AlarmKit)
-import AlarmKit
-#endif
 
 struct HeartbeatProfile: Hashable, Codable {
 	let name: String
@@ -62,6 +59,7 @@ class AudioEngineManager: ObservableObject {
 	var organicHeartbeatPlayer: AVAudioPlayer?
 	var breathingPlayer: AVAudioPlayer?
 	var musicPlayer = MPMusicPlayerController.applicationQueuePlayer
+	var silentLoopPlayer: AVAudioPlayer?
 	
 	@Published var isPlaying = false
 	@Published var isBreathing = false
@@ -91,10 +89,10 @@ class AudioEngineManager: ObservableObject {
 	
 	@AppStorage("masterVolume") var masterVolume: Double = 1.0 { didSet { updateVolumes() } }
 	
-	@AppStorage("heartbeatVolume") var heartbeatVolume: Double = 0.0 { didSet { evaluateEngineState() } }
-	@AppStorage("clockVolume") var clockVolume: Double = 0.0 { didSet { evaluateEngineState() } }
-	@AppStorage("brownVolume") var brownVolume: Double = 0.0 { didSet { evaluateEngineState() } }
-	@AppStorage("breathVolume") var breathVolume: Double = 0.0 { didSet { evaluateEngineState() } }
+	@AppStorage("heartbeatVolume") var heartbeatVolume: Double = 0.0
+	@AppStorage("clockVolume") var clockVolume: Double = 0.0
+	@AppStorage("brownVolume") var brownVolume: Double = 0.0
+	@AppStorage("breathVolume") var breathVolume: Double = 0.0
 	
 	@AppStorage("rainVolume") var rainVolume: Double = 0.0 { didSet { updateVolumes() } }
 	@AppStorage("organicHeartbeatVolume") var organicHeartbeatVolume: Double = 0.0 { didSet { updateVolumes() } }
@@ -112,10 +110,10 @@ class AudioEngineManager: ObservableObject {
 	
 	@AppStorage("savedTracksJSON") var savedTracksJSON: Data = Data()
 	
-	// Alarm Storage & State
+	// Alarm Properties
 	@AppStorage("alarmTimeRef") var alarmTimeRef: Double = Date().timeIntervalSince1970
-	@Published var alarmTime: Date = Date() { didSet { alarmTimeRef = alarmTime.timeIntervalSince1970; syncAlarmState() } }
-	@Published var isAlarmOn: Bool = false { didSet { syncAlarmState() } }
+	@Published var alarmTime: Date = Date() { didSet { alarmTimeRef = alarmTime.timeIntervalSince1970 } }
+	@AppStorage("isAlarmOn") var isAlarmOn: Bool = false { didSet { toggleSilentBackgroundLoop() } }
 	
 	@AppStorage("alarmTrackPath") var alarmTrackPath: String = ""
 	@AppStorage("alarmTrackIsAppleMusic") var alarmTrackIsAppleMusic: Bool = false
@@ -124,7 +122,6 @@ class AudioEngineManager: ObservableObject {
 	var alarmPlayer: AVAudioPlayer?
 	var alarmTimer: Timer?
 	var fadeTimer: Timer?
-	private var activeSystemAlarmID: UUID?
 	
 	// Generator Buffers
 	private var lubL = [Float]()
@@ -153,6 +150,7 @@ class AudioEngineManager: ObservableObject {
 	
 	init() {
 		alarmTime = Date(timeIntervalSince1970: alarmTimeRef)
+		generateSilentWavIfNeeded()
 		applyAudioSessionSettings()
 		setupOrganicPlayers()
 		loadTracks()
@@ -162,6 +160,7 @@ class AudioEngineManager: ObservableObject {
 		rebuildPrototypes()
 		updateVolumes()
 		startAlarmMonitor()
+		toggleSilentBackgroundLoop()
 	}
 	
 	private func applyAudioSessionSettings() {
@@ -185,15 +184,67 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
-	private func evaluateEngineState() {
-		guard isPlaying else { return }
-		let proceduralTotal = heartbeatVolume + clockVolume + brownVolume + breathVolume
-		if proceduralTotal == 0 {
-			if engine.isRunning { engine.pause() }
-		} else {
-			if !engine.isRunning {
-				try? engine.start()
+	// MARK: - Procedural Silence Generation for Background Keep-Alive
+	private func generateSilentWavIfNeeded() {
+		let fm = FileManager.default
+		let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+		let fileURL = docs.appendingPathComponent("silence.wav")
+		
+		guard !fm.fileExists(atPath: fileURL.path) else { return }
+		
+		let sampleRate: Int32 = 44100
+		let numChannels: Int16 = 2
+		let bitsPerSample: Int16 = 16
+		let durationInSeconds: Int = 2
+		
+		let numSamples = sampleRate * Int32(durationInSeconds)
+		let subChunk2Size = numSamples * Int32(numChannels) * Int32(bitsPerSample / 8)
+		let chunkSize = 36 + subChunk2Size
+		
+		var header = Data()
+		
+		// RIFF header
+		header.append(contentsOf: [UInt8]("RIFF".utf8))
+		header.append(Data(bytes: [chunkSize], count: 4))
+		header.append(contentsOf: [UInt8]("WAVE".utf8))
+		
+		// fmt subchunk
+		header.append(contentsOf: [UInt8]("fmt ".utf8))
+		header.append(Data(bytes: [Int32(16)], count: 4)) // Subchunk1Size
+		header.append(Data(bytes: [Int16(1)], count: 2))  // AudioFormat PCM
+		header.append(Data(bytes: [numChannels], count: 2))
+		header.append(Data(bytes: [sampleRate], count: 4))
+		
+		let byteRate = sampleRate * Int32(numChannels) * Int32(bitsPerSample / 8)
+		header.append(Data(bytes: [byteRate], count: 4))
+		
+		let blockAlign = numChannels * (bitsPerSample / 8)
+		header.append(Data(bytes: [blockAlign], count: 2))
+		header.append(Data(bytes: [bitsPerSample], count: 2))
+		
+		// data subchunk
+		header.append(contentsOf: [UInt8]("data".utf8))
+		header.append(Data(bytes: [subChunk2Size], count: 4))
+		
+		// Pure silence padding payload bytes
+		let silenceData = Data(repeating: 0, count: Int(subChunk2Size))
+		header.append(silenceData)
+		
+		try? header.write(to: fileURL)
+	}
+	
+	private func toggleSilentBackgroundLoop() {
+		if isAlarmOn {
+			if silentLoopPlayer == nil {
+				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+				let fileURL = docs.appendingPathComponent("silence.wav")
+				silentLoopPlayer = try? AVAudioPlayer(contentsOf: fileURL)
+				silentLoopPlayer?.numberOfLoops = -1
+				silentLoopPlayer?.volume = 0.01 // Kept ultra-low, completely unnoticeable
 			}
+			silentLoopPlayer?.play()
+		} else {
+			silentLoopPlayer?.stop()
 		}
 	}
 	
@@ -238,7 +289,6 @@ class AudioEngineManager: ObservableObject {
 				alarmTrackPath = filename
 				alarmTrackIsAppleMusic = false
 				alarmTrackNameStorage = url.lastPathComponent
-				syncAlarmState()
 			} else {
 				let track = ImportedTrack(name: url.lastPathComponent, player: player, volume: 0.5, isAppleMusic: false, path: filename)
 				track.masterVolume = masterVolume
@@ -264,7 +314,6 @@ class AudioEngineManager: ObservableObject {
 					alarmTrackPath = String(item.persistentID)
 					alarmTrackIsAppleMusic = true
 					alarmTrackNameStorage = item.title ?? "Unknown Track"
-					syncAlarmState()
 					break
 				} else {
 					let track = ImportedTrack(
@@ -357,28 +406,21 @@ class AudioEngineManager: ObservableObject {
 	private func startAlarmMonitor() {
 		alarmTimer?.invalidate()
 		alarmTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-			self?.checkInAppAlarm()
+			self?.checkAlarm()
 		}
 	}
 	
-	private func checkInAppAlarm() {
+	private func checkAlarm() {
 		guard isAlarmOn else { return }
-		
-		#if canImport(AlarmKit)
-		if #available(iOS 26.0, *) {
-			return // Handled at system level via AlarmKit
-		}
-		#endif
-		
 		let now = Date()
 		let cal = Calendar.current
 		if cal.component(.hour, from: now) == cal.component(.hour, from: alarmTime) &&
 		   cal.component(.minute, from: now) == cal.component(.minute, from: alarmTime) {
-			triggerInAppAlarm()
+			triggerAlarm()
 		}
 	}
 	
-	private func triggerInAppAlarm() {
+	private func triggerAlarm() {
 		isAlarmOn = false
 		do {
 			try AVAudioSession.sharedInstance().setActive(true)
@@ -412,78 +454,6 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 	}
-	
-	private func syncAlarmState() {
-		#if canImport(AlarmKit)
-		if #available(iOS 26.0, *) {
-			Task {
-				await updateAlarmKitSchedule()
-			}
-			return
-		}
-		#endif
-	}
-	
-	#if canImport(AlarmKit)
-	@available(iOS 26.0, *)
-	private func updateAlarmKitSchedule() async {
-		if let existingID = activeSystemAlarmID {
-			try? await AlarmManager.shared.stop(id: existingID)
-			activeSystemAlarmID = nil
-		}
-		
-		guard isAlarmOn else { return }
-		
-		do {
-			let status = try await AlarmManager.shared.requestAuthorization()
-			guard status == .authorized else { return }
-			
-			let stopButton = AlarmButton(text: "Dismiss", textColor: .white, systemImageName: "stop.circle.fill")
-			let snoozeButton = AlarmButton(text: "Snooze", textColor: .white, systemImageName: "repeat.circle.fill")
-			
-			let alertPresentation = AlarmPresentation.Alert(
-				title: "Sleep Engine Alarm",
-				stopButton: stopButton,
-				secondaryButton: snoozeButton,
-				secondaryButtonBehavior: .countdown
-			)
-			
-			let presentation = AlarmPresentation(alert: alertPresentation, countdown: nil)
-			let attributes = AlarmAttributes(presentation: presentation, tintColor: .blue)
-			
-			let cal = Calendar.current
-			let hour = cal.component(.hour, from: alarmTime)
-			let minute = cal.component(.minute, from: alarmTime)
-			
-			let relativeTime = Alarm.Schedule.Relative.Time(hour: hour, minute: minute)
-			let recurrence = Alarm.Schedule.Relative.Recurrence.oneTime
-			let schedule = Alarm.Schedule.relative(Alarm.Schedule.Relative(time: relativeTime, repeats: recurrence))
-			
-			var alarmSound: AlarmConfiguration.AlarmSound = .default
-			if !alarmTrackPath.isEmpty && !alarmTrackIsAppleMusic {
-				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-				let fullURL = docs.appendingPathComponent(alarmTrackPath)
-				alarmSound = .named(fullURL.lastPathComponent)
-			}
-			
-			let configuration = AlarmManager.AlarmConfiguration(
-				countdownDuration: Alarm.CountdownDuration(preAlert: nil, postAlert: 300),
-				schedule: schedule,
-				attributes: attributes,
-				secondaryIntent: nil,
-				sound: alarmSound
-			)
-			
-			let newID = UUID()
-			let scheduledID = try await AlarmManager.shared.schedule(id: newID, configuration: configuration)
-			await MainActor.run {
-				self.activeSystemAlarmID = scheduledID
-			}
-		} catch {
-			print("AlarmKit error: \(error)")
-		}
-	}
-	#endif
 	
 	func playBreathingCue(type: String) {
 		let suffix = useWhisper ? "_WHISPER" : ""
@@ -875,12 +845,7 @@ class AudioEngineManager: ObservableObject {
 			do {
 				try AVAudioSession.sharedInstance().setActive(true)
 				if sourceNode == nil { setupAudio() }
-				
-				let proceduralTotal = heartbeatVolume + clockVolume + brownVolume + breathVolume
-				if proceduralTotal > 0 {
-					try engine.start()
-				}
-				
+				try engine.start()
 				rainPlayer?.play()
 				organicHeartbeatPlayer?.play()
 				for track in importedTracks { track.player?.play() }
@@ -952,10 +917,7 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self else { return }
 			if self.isPlaying {
 				do {
-					let proceduralTotal = self.heartbeatVolume + self.clockVolume + self.brownVolume + self.breathVolume
-					if proceduralTotal > 0 {
-						try self.engine.start()
-					}
+					try self.engine.start()
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.player?.play() }
