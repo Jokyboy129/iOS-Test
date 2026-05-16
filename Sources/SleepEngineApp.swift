@@ -83,8 +83,8 @@ class AudioEngineManager: ObservableObject {
 	let clockOptions = ["Quartz Wall Clock", "Pocket Watch", "Grandfather Clock", "Metronome"]
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
 	
-	@AppStorage("selectedProfileIndex") var selectedProfileIndex = 0 { didSet { rebuildPrototypes(); updateNowPlaying() } }
-	@AppStorage("placementIndex") var placementIndex = 0 { didSet { rebuildPrototypes() } }
+	@AppStorage("selectedProfileIndex") var selectedProfileIndex = 0 { didSet { resetDynamicBPM(); rebuildPrototypes(); updateNowPlaying() } }
+	@AppStorage("placementIndex") var placementIndex = 0
 	
 	@AppStorage("masterVolume") var masterVolume: Double = 1.0 { didSet { updateVolumes() } }
 	
@@ -102,10 +102,22 @@ class AudioEngineManager: ObservableObject {
 	@AppStorage("panBreathIndex") var panBreathIndex = 0
 	
 	@AppStorage("clockTypeIndex") var clockTypeIndex = 0 { didSet { rebuildPrototypes() } }
-	@AppStorage("syncClock") var syncClock = false { didSet { rebuildPrototypes() } }
+	@AppStorage("syncClock") var syncClock = false
 	
 	@AppStorage("mixWithOthers") var mixWithOthers = false { didSet { applyAudioSessionSettings() } }
 	@AppStorage("useWhisper") var useWhisper = false
+	
+	// Real-Time Slowdown Properties
+	@AppStorage("enableSlowdown") var enableSlowdown = false
+	@AppStorage("targetBPM") var targetBPM: Double = 40.0
+	@AppStorage("slowdownMinutes") var slowdownMinutes: Double = 30.0
+	
+	// Breathing Sync
+	@AppStorage("syncBreathing") var syncBreathing = false
+	
+	// 3D Spatial Audio
+	@AppStorage("master3DOrbit") var master3DOrbit = false
+	@AppStorage("orbitSpeedIndex") var orbitSpeedIndex = 0
 	
 	@AppStorage("savedTracksJSON") var savedTracksJSON: Data = Data()
 	
@@ -122,13 +134,7 @@ class AudioEngineManager: ObservableObject {
 	var alarmTimer: Timer?
 	var fadeTimer: Timer?
 	
-	// Generator Buffers
-	private var lubL = [Float]()
-	private var lubR = [Float]()
-	private var dubL = [Float]()
-	private var dubR = [Float]()
-	private var lubEnv = [Float]()
-	private var dubEnv = [Float]()
+	// Generator Buffers & State
 	private var brownL = [Float]()
 	private var brownR = [Float]()
 	private var breathL = [Float]()
@@ -137,12 +143,22 @@ class AudioEngineManager: ObservableObject {
 	private var whooshR = [Float]()
 	private var clk = [Float]()
 	
-	private var nBeat = 0
 	private var nNoise = 0
-	private var nClock = 0
-	
 	private var frameIdx = 0
 	private let sampleRate: Double = 44100.0
+	
+	// Real-Time Synth State
+	private var currentDynamicBPM: Double = 60.0
+	private var startBPM: Double = 60.0
+	private var tBeat: Double = 0.0
+	private var beatCounter: Int = 0
+	private var clkPlayIdx: Int = Int.max
+	private var clkPlayIdx2: Int = Int.max
+	
+	// Binaural Delay Lines
+	private var delayLineL = [Float](repeating: 0, count: 2048)
+	private var delayLineR = [Float](repeating: 0, count: 2048)
+	private var delayIdx = 0
 	
 	private var breathingTask: Task<Void, Never>?
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -157,6 +173,7 @@ class AudioEngineManager: ObservableObject {
 		loadAlarmTrack()
 		setupMediaControls()
 		setupObservers()
+		resetDynamicBPM()
 		rebuildPrototypes()
 		updateVolumes()
 		startAlarmMonitor()
@@ -184,6 +201,15 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
+	private func resetDynamicBPM() {
+		currentDynamicBPM = profiles[selectedProfileIndex].bpm
+		startBPM = currentDynamicBPM
+		tBeat = 0
+		beatCounter = 0
+		clkPlayIdx = Int.max
+		clkPlayIdx2 = Int.max
+	}
+	
 	private func generateSilentWavIfNeeded() {
 		let fm = FileManager.default
 		let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -201,29 +227,22 @@ class AudioEngineManager: ObservableObject {
 		let chunkSize = 36 + subChunk2Size
 		
 		var header = Data()
-		
 		header.append(contentsOf: [UInt8]("RIFF".utf8))
 		header.append(Data(bytes: [chunkSize], count: 4))
 		header.append(contentsOf: [UInt8]("WAVE".utf8))
-		
 		header.append(contentsOf: [UInt8]("fmt ".utf8))
 		header.append(Data(bytes: [Int32(16)], count: 4))
 		header.append(Data(bytes: [Int16(1)], count: 2))
 		header.append(Data(bytes: [numChannels], count: 2))
 		header.append(Data(bytes: [sampleRate], count: 4))
-		
 		let byteRate = sampleRate * Int32(numChannels) * Int32(bitsPerSample / 8)
 		header.append(Data(bytes: [byteRate], count: 4))
-		
 		let blockAlign = numChannels * (bitsPerSample / 8)
 		header.append(Data(bytes: [blockAlign], count: 2))
 		header.append(Data(bytes: [bitsPerSample], count: 2))
-		
 		header.append(contentsOf: [UInt8]("data".utf8))
 		header.append(Data(bytes: [subChunk2Size], count: 4))
-		
-		let silenceData = Data(repeating: 0, count: Int(subChunk2Size))
-		header.append(silenceData)
+		header.append(Data(repeating: 0, count: Int(subChunk2Size)))
 		
 		try? header.write(to: fileURL)
 	}
@@ -244,19 +263,13 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	private func loadPlayer(filename: String) -> AVAudioPlayer? {
-		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else {
-			print("Missing built-in file: \(filename).wav")
-			return nil
-		}
+		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else { return nil }
 		do {
 			let player = try AVAudioPlayer(contentsOf: url)
 			player.numberOfLoops = -1
 			player.prepareToPlay()
 			return player
-		} catch {
-			print("Could not load \(filename): \(error)")
-			return nil
-		}
+		} catch { return nil }
 	}
 	
 	private func setupOrganicPlayers() {
@@ -291,9 +304,7 @@ class AudioEngineManager: ObservableObject {
 				importedTracks.append(track)
 				saveTracks()
 			}
-		} catch {
-			print("File loading error: \(error)")
-		}
+		} catch { print("File loading error: \(error)") }
 	}
 	
 	func addAppleMusic(items: [MPMediaItem], isAlarm: Bool = false) {
@@ -323,9 +334,7 @@ class AudioEngineManager: ObservableObject {
 					importedTracks.append(track)
 					saveTracks()
 				}
-			} catch {
-				print("Failed to load Apple Music track: \(error)")
-			}
+			} catch { print("Failed to load Apple Music track: \(error)") }
 		}
 	}
 	
@@ -371,7 +380,6 @@ class AudioEngineManager: ObservableObject {
 			
 			player?.numberOfLoops = -1
 			player?.prepareToPlay()
-			
 			let track = ImportedTrack(id: data.id, name: data.name, player: player, volume: data.volume, isAppleMusic: data.isAppleMusic, path: data.path)
 			track.masterVolume = masterVolume
 			importedTracks.append(track)
@@ -417,9 +425,7 @@ class AudioEngineManager: ObservableObject {
 	
 	private func triggerAlarm() {
 		isAlarmOn = false
-		do {
-			try AVAudioSession.sharedInstance().setActive(true)
-		} catch {}
+		do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
 		
 		alarmPlayer?.volume = 0
 		alarmPlayer?.play()
@@ -433,13 +439,8 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self else { return }
 			fadeStep += 1
 			let progress = Double(fadeStep) / Double(totalSteps)
-			
 			self.alarmPlayer?.volume = Float(progress * 1.0)
-			
-			if self.isPlaying {
-				self.masterVolume = initialMaster * (1.0 - progress)
-			}
-			
+			if self.isPlaying { self.masterVolume = initialMaster * (1.0 - progress) }
 			if fadeStep >= totalSteps {
 				timer.invalidate()
 				if self.isPlaying {
@@ -454,24 +455,18 @@ class AudioEngineManager: ObservableObject {
 		let suffix = useWhisper ? "_WHISPER" : ""
 		let filename = "\(type)\(suffix)"
 		
-		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else {
-			print("Missing breathing cue: \(filename).wav")
-			return
-		}
+		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else { return }
 		do {
 			breathingPlayer = try AVAudioPlayer(contentsOf: url)
 			breathingPlayer?.volume = Float(masterVolume)
 			breathingPlayer?.play()
-		} catch {
-			print("Error playing breathing cue: \(error)")
-		}
+		} catch {}
 	}
 	
 	func startBreathingExercise(inhale: Int, hold1: Int, exhale: Int, hold2: Int) {
 		breathingTask?.cancel()
 		isBreathing = true
 		
-		// Request background assertion so Task sleep doesn't get culled upon locking the screen
 		backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "BreathingExercise") { [weak self] in
 			self?.stopBreathingExercise()
 		}
@@ -521,41 +516,138 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self else { return noErr }
 			let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
 			
-			if self.nBeat == 0 || self.nNoise == 0 || self.nClock == 0 {
-				return noErr
-			}
+			if self.nNoise == 0 { return noErr }
 			
+			let config = self.profiles[self.selectedProfileIndex]
 			let vHeart = Float(self.heartbeatVolume)
 			let vClock = Float(self.clockVolume)
 			let vBrown = Float(self.brownVolume)
 			let vBreath = Float(self.breathVolume)
-			
 			let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.6)
+			
+			let dt = 1.0 / self.sampleRate
+			let bpmDropRate = self.enableSlowdown ? ((self.startBPM - self.targetBPM) / (self.slowdownMinutes * 60.0 * self.sampleRate)) : 0.0
+			let placement = self.placementOptions[self.placementIndex]
 			
 			for frame in 0..<Int(frameCount) {
 				let currentFrame = self.frameIdx + frame
 				let tChunk = Float(currentFrame) / Float(self.sampleRate)
 				
-				let idxBeat = currentFrame % self.nBeat
+				if self.enableSlowdown {
+					if bpmDropRate > 0 && self.currentDynamicBPM > self.targetBPM {
+						self.currentDynamicBPM -= bpmDropRate
+						if self.currentDynamicBPM < self.targetBPM { self.currentDynamicBPM = self.targetBPM }
+					} else if bpmDropRate < 0 && self.currentDynamicBPM < self.targetBPM {
+						self.currentDynamicBPM -= bpmDropRate
+						if self.currentDynamicBPM > self.targetBPM { self.currentDynamicBPM = self.targetBPM }
+					}
+				}
+				
+				let beatDuration = 60.0 / self.currentDynamicBPM
+				self.tBeat += dt
+				
+				// Clock triggers
+				let clockType = self.clockOptions[self.clockTypeIndex]
+				let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
+				
+				if self.tBeat >= beatDuration {
+					self.tBeat -= beatDuration
+					self.beatCounter += 1
+					self.clkPlayIdx = 0
+					
+					if self.syncBreathing {
+						let phaseBeat = self.beatCounter % 8
+						if phaseBeat == 0 {
+							DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; self.playBreathingCue(type: "INHALE") }
+						} else if phaseBeat == 4 {
+							DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; self.playBreathingCue(type: "EXHALE") }
+						}
+					}
+				}
+				
+				if ticksPerBeat == 2 && self.tBeat >= (beatDuration / 2.0) && self.tBeat - dt < (beatDuration / 2.0) {
+					self.clkPlayIdx2 = 0
+				}
+				
+				let t = self.tBeat
+				let atk = 0.04
+				let rel = 0.02
+				
+				// Dynamic Lub Generation
+				var lEnv = exp(-config.lubDecay * t)
+				var slEnv = exp(-config.subDecay * t)
+				if t < atk {
+					let attackCurve = pow(sin((Double.pi / 2.0) * t / atk), 2)
+					lEnv *= attackCurve
+					slEnv *= attackCurve
+				}
+				if t > beatDuration - rel {
+					let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
+					lEnv *= releaseCurve
+					slEnv *= releaseCurve
+				}
+				let subLub = sin(2 * Double.pi * config.subFreq * t) * slEnv * config.subVol
+				let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
+				let lub = sin(lubPhase) * lEnv
+				
+				// Dynamic Dub Generation
+				var dEnv = 0.0
+				var sdEnv = 0.0
+				var subDub = 0.0
+				var dub = 0.0
+				if t >= config.dubDelay {
+					let tAct = t - config.dubDelay
+					dEnv = exp(-config.dubDecay * tAct)
+					sdEnv = exp(-config.subDecay * tAct)
+					if tAct < atk {
+						let attackCurve = pow(sin((Double.pi / 2.0) * tAct / atk), 2)
+						dEnv *= attackCurve
+						sdEnv *= attackCurve
+					}
+					if t > beatDuration - rel {
+						let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
+						dEnv *= releaseCurve
+						sdEnv *= releaseCurve
+					}
+					subDub = sin(2 * Double.pi * config.subFreq * t) * sdEnv * config.subVol * 0.85
+					let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
+					dub = sin(dubPhase) * dEnv
+				}
+				
+				let combinedLub = Float((lub + subLub) * 0.8)
+				let combinedDub = Float((dub + subDub) * 0.8)
+				
+				var hL: Float = 0
+				var hR: Float = 0
+				if placement == "Center Beats & Flow" {
+					hL = (combinedLub + combinedDub) * 0.85
+					hR = (combinedLub + combinedDub) * 0.85
+				} else if placement == "Lub Left Ear / Dub Right Ear" {
+					hL = combinedLub; hR = combinedDub
+				} else {
+					hL = combinedDub; hR = combinedLub
+				}
+				
+				let flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
 				let idxNoise = currentFrame % self.nNoise
-				let idxClock = currentFrame % self.nClock
-				
-				let beatL = self.lubL[idxBeat] + self.dubL[idxBeat]
-				let beatR = self.lubR[idxBeat] + self.dubR[idxBeat]
-				let flowEnv = 0.6 + 0.4 * (self.lubEnv[idxBeat] + self.dubEnv[idxBeat])
-				
-				let config = self.profiles[self.selectedProfileIndex]
 				let wVol = Float(config.whooshVol)
-				let whooshL = self.whooshL[idxNoise] * flowEnv * wVol
-				let whooshR = self.whooshR[idxNoise] * flowEnv * wVol
+				hL += self.whooshL[idxNoise] * flowEnv * wVol
+				hR += self.whooshR[idxNoise] * flowEnv * wVol
 				
 				let posH = self.getPanPos(mode: self.panHeartIndex, time: tChunk)
-				let (chunkHL, chunkHR) = self.applyStereoPan(inL: beatL + whooshL, inR: beatR + whooshR, pos: posH, vol: vHeart)
+				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart)
 				
 				var chunkCL: Float = 0
 				var chunkCR: Float = 0
 				if vClock > 0 {
-					let clkWave = self.clk[idxClock]
+					var clkWave: Float = 0
+					if self.syncClock {
+						if self.clkPlayIdx < self.clk.count { clkWave += self.clk[self.clkPlayIdx]; self.clkPlayIdx += 1 }
+						if self.clkPlayIdx2 < self.clk.count { clkWave += self.clk[self.clkPlayIdx2]; self.clkPlayIdx2 += 1 }
+					} else {
+						let idxClock = currentFrame % self.clk.count
+						clkWave = self.clk[idxClock]
+					}
 					let posC = self.getPanPos(mode: self.panClockIndex, time: tChunk)
 					let pannedC = self.applyStereoPan(inL: clkWave, inR: clkWave, pos: posC, vol: vClock * 0.4)
 					chunkCL = pannedC.0
@@ -574,19 +666,58 @@ class AudioEngineManager: ObservableObject {
 				var chunkBrL: Float = 0
 				var chunkBrR: Float = 0
 				if vBreath > 0 {
-					let breathPhase = fmod(tChunk / 6.0, 1.0)
-					let inhale: Float = (breathPhase < 0.45) ? sin(Float.pi * (breathPhase / 0.45)) : 0.0
-					let exhale: Float = (breathPhase >= 0.5 && breathPhase < 0.95) ? sin(Float.pi * ((breathPhase - 0.5) / 0.45)) : 0.0
-					let breathEnv = max(0, inhale * 0.8 + exhale * 0.6)
-					
+					let breathEnv: Float
+					if self.syncBreathing {
+						let syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration)
+						var inhale: Float = 0, exhale: Float = 0
+						if syncPhase < 4.0 { inhale = Float(sin(Double.pi * syncPhase / 4.0)) }
+						if syncPhase >= 4.0 && syncPhase < 8.0 { exhale = Float(sin(Double.pi * (syncPhase - 4.0) / 4.0)) }
+						breathEnv = max(0, inhale * 0.8 + exhale * 0.6)
+					} else {
+						let breathPhase = fmod(tChunk / 6.0, 1.0)
+						let inhale: Float = (breathPhase < 0.45) ? sin(Float.pi * (breathPhase / 0.45)) : 0.0
+						let exhale: Float = (breathPhase >= 0.5 && breathPhase < 0.95) ? sin(Float.pi * ((breathPhase - 0.5) / 0.45)) : 0.0
+						breathEnv = max(0, inhale * 0.8 + exhale * 0.6)
+					}
 					let posBr = self.getPanPos(mode: self.panBreathIndex, time: tChunk)
 					let pannedBr = self.applyStereoPan(inL: self.breathL[idxNoise] * breathEnv, inR: self.breathR[idxNoise] * breathEnv, pos: posBr, vol: vBreath * 0.6)
 					chunkBrL = pannedBr.0
 					chunkBrR = pannedBr.1
 				}
 				
-				let finalL = (chunkHL + chunkCL + chunkBL + chunkBrL) / totalGain
-				let finalR = (chunkHR + chunkCR + chunkBR + chunkBrR) / totalGain
+				var finalL = (chunkHL + chunkCL + chunkBL + chunkBrL) / totalGain
+				var finalR = (chunkHR + chunkCR + chunkBR + chunkBrR) / totalGain
+				
+				if self.master3DOrbit {
+					let period: Double = self.orbitSpeedIndex == 0 ? 60.0 : 300.0
+					let angle = 2.0 * Double.pi * Double(currentFrame) / (self.sampleRate * period)
+					let maxDelay: Float = 35.0
+					let delayL = maxDelay * Float(0.5 - 0.5 * sin(angle))
+					let delayR = maxDelay * Float(0.5 + 0.5 * sin(angle))
+					let gainL = Float(0.7 + 0.3 * cos(angle + Double.pi/2))
+					let gainR = Float(0.7 + 0.3 * cos(angle - Double.pi/2))
+					let depthGain = Float(0.85 - 0.15 * cos(angle))
+					
+					self.delayLineL[self.delayIdx] = finalL
+					self.delayLineR[self.delayIdx] = finalR
+					
+					let readPosL = Float(self.delayIdx) - delayL + 2048.0
+					let idxL1 = Int(readPosL) % 2048
+					let idxL2 = (idxL1 + 1) % 2048
+					let fracL = readPosL - floor(readPosL)
+					let sampL = self.delayLineL[idxL1] * (1 - fracL) + self.delayLineL[idxL2] * fracL
+					
+					let readPosR = Float(self.delayIdx) - delayR + 2048.0
+					let idxR1 = Int(readPosR) % 2048
+					let idxR2 = (idxR1 + 1) % 2048
+					let fracR = readPosR - floor(readPosR)
+					let sampR = self.delayLineR[idxR1] * (1 - fracR) + self.delayLineR[idxR2] * fracR
+					
+					finalL = sampL * gainL * depthGain
+					finalR = sampR * gainR * depthGain
+					
+					self.delayIdx = (self.delayIdx + 1) % 2048
+				}
 				
 				let ptrL = ablPointer[0].mData?.assumingMemoryBound(to: Float.self)
 				let ptrR = ablPointer[1].mData?.assumingMemoryBound(to: Float.self)
@@ -625,9 +756,7 @@ class AudioEngineManager: ObservableObject {
 		let bleedToR = pos > 0 ? pos : 0.0
 		let keepL = pos > 0 ? 1.0 - pos : 1.0
 		let keepR = pos < 0 ? 1.0 - abs(pos) : 1.0
-		
 		let norm = 1.0 + abs(pos)
-		
 		let outL = ((inL * keepL + inR * bleedToL) / norm) * vol
 		let outR = ((inR * keepR + inL * bleedToR) / norm) * vol
 		return (outL, outR)
@@ -684,114 +813,17 @@ class AudioEngineManager: ObservableObject {
 		}
 		
 		var finalNoise = Array(noise[0..<length])
-		
 		for i in 0..<length {
 			if abs(finalNoise[i]) > maxVal { maxVal = abs(finalNoise[i]) }
 		}
-		
 		if maxVal > 0 {
 			for i in 0..<length { finalNoise[i] /= maxVal }
 		}
-		
 		return finalNoise
 	}
 	
 	private func rebuildPrototypes() {
 		let config = profiles[selectedProfileIndex]
-		
-		let bpm = config.bpm
-		nBeat = Int((60.0 / bpm) * sampleRate)
-		let actualBeatDur = Double(nBeat) / sampleRate
-		
-		let atkSamples = Int(0.04 * sampleRate)
-		let relSamples = Int(0.02 * sampleRate)
-		
-		let trueSubFreq = max(1, round(config.subFreq * actualBeatDur)) / actualBeatDur
-		let idxStart = Int(config.dubDelay * sampleRate)
-		
-		let placement = placementOptions[placementIndex]
-		
-		var localLubL = [Float](repeating: 0, count: nBeat)
-		var localLubR = [Float](repeating: 0, count: nBeat)
-		var localDubL = [Float](repeating: 0, count: nBeat)
-		var localDubR = [Float](repeating: 0, count: nBeat)
-		var localLubEnv = [Float](repeating: 0, count: nBeat)
-		var localDubEnv = [Float](repeating: 0, count: nBeat)
-		
-		for i in 0..<nBeat {
-			let t = Double(i) / sampleRate
-			
-			var lEnv = exp(-config.lubDecay * t)
-			if i < atkSamples { lEnv *= pow(sin((Double.pi / 2.0) * Double(i) / Double(atkSamples)), 2) }
-			if i > nBeat - relSamples { lEnv *= pow(cos((Double.pi / 2.0) * Double(i - (nBeat - relSamples)) / Double(relSamples)), 2) }
-			localLubEnv[i] = Float(lEnv)
-			
-			var sLEnv = exp(-config.subDecay * t)
-			if i < atkSamples { sLEnv *= pow(sin((Double.pi / 2.0) * Double(i) / Double(atkSamples)), 2) }
-			if i > nBeat - relSamples { sLEnv *= pow(cos((Double.pi / 2.0) * Double(i - (nBeat - relSamples)) / Double(relSamples)), 2) }
-			let subLub = sin(2 * Double.pi * trueSubFreq * t) * sLEnv * config.subVol
-			
-			let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
-			let lub = sin(lubPhase) * lEnv
-			
-			var dEnv: Double = 0
-			var subDub: Double = 0
-			var dub: Double = 0
-			
-			if i >= idxStart {
-				let tAct = t - config.dubDelay
-				dEnv = exp(-config.dubDecay * tAct)
-				let relI = i - idxStart
-				if relI < atkSamples { dEnv *= pow(sin((Double.pi / 2.0) * Double(relI) / Double(atkSamples)), 2) }
-				if i > nBeat - relSamples { dEnv *= pow(cos((Double.pi / 2.0) * Double(i - (nBeat - relSamples)) / Double(relSamples)), 2) }
-				
-				var sDEnv = exp(-config.subDecay * tAct)
-				if relI < atkSamples { sDEnv *= pow(sin((Double.pi / 2.0) * Double(relI) / Double(atkSamples)), 2) }
-				if i > nBeat - relSamples { sDEnv *= pow(cos((Double.pi / 2.0) * Double(i - (nBeat - relSamples)) / Double(relSamples)), 2) }
-				subDub = sin(2 * Double.pi * trueSubFreq * t) * sDEnv * config.subVol * 0.85
-				
-				let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
-				dub = sin(dubPhase) * dEnv
-			}
-			localDubEnv[i] = Float(dEnv)
-			
-			let combinedLub = Float((lub + subLub))
-			let combinedDub = Float((dub + subDub))
-			
-			if placement == "Center Beats & Flow" {
-				localLubL[i] = combinedLub * 0.85
-				localLubR[i] = combinedLub * 0.85
-				localDubL[i] = combinedDub * 0.85
-				localDubR[i] = combinedDub * 0.85
-			} else if placement == "Lub Left Ear / Dub Right Ear" {
-				localLubL[i] = combinedLub; localLubR[i] = 0; localDubL[i] = 0; localDubR[i] = combinedDub
-			} else {
-				localLubL[i] = 0; localLubR[i] = combinedLub; localDubL[i] = combinedDub; localDubR[i] = 0
-			}
-		}
-		
-		var globalPeak: Float = 0
-		for i in 0..<nBeat {
-			let peakL = abs(localLubL[i] + localDubL[i])
-			let peakR = abs(localLubR[i] + localDubR[i])
-			if peakL > globalPeak { globalPeak = peakL }
-			if peakR > globalPeak { globalPeak = peakR }
-		}
-		if globalPeak > 0 {
-			for i in 0..<nBeat {
-				localLubL[i] = (localLubL[i] / globalPeak) * 0.70
-				localLubR[i] = (localLubR[i] / globalPeak) * 0.70
-				localDubL[i] = (localDubL[i] / globalPeak) * 0.70
-				localDubR[i] = (localDubR[i] / globalPeak) * 0.70
-			}
-		}
-		
-		self.lubL = localLubL
-		self.lubR = localLubR
-		self.dubL = localDubL
-		self.dubR = localDubR
-		self.lubEnv = localLubEnv
-		self.dubEnv = localDubEnv
 		
 		nNoise = Int(sampleRate * 5)
 		if brownL.isEmpty {
@@ -804,47 +836,25 @@ class AudioEngineManager: ObservableObject {
 		whooshR = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf)
 		
 		let clkType = clockOptions[clockTypeIndex]
-		var nClockProto = 0
-		var ticksPerBeat = 1
+		let nClockProto = Int(sampleRate * 1.5)
+		clk = [Float](repeating: 0, count: nClockProto)
 		
-		if clkType == "Pocket Watch" { nClockProto = Int(sampleRate / 2); ticksPerBeat = 2 }
-		else if clkType == "Quartz Wall Clock" { nClockProto = Int(sampleRate); ticksPerBeat = 1 }
-		else if clkType == "Grandfather Clock" { nClockProto = Int(sampleRate * 1.5); ticksPerBeat = 1 }
-		else { nClockProto = Int(sampleRate / 1.5); ticksPerBeat = 1 }
-		
-		var clkProto = [Float](repeating: 0, count: nClockProto)
 		for i in 0..<nClockProto {
 			let tc = Double(i) / sampleRate
 			let randomGaussian = gaussianRandom() * 0.3
 			if clkType == "Quartz Wall Clock" {
 				let body = (sin(2 * Double.pi * 1200 * tc) * 0.15 + sin(2 * Double.pi * 2000 * tc) * 0.05) * exp(-120 * tc)
-				clkProto[i] = Float(body) + randomGaussian * Float(exp(-300 * tc))
+				clk[i] = Float(body) + randomGaussian * Float(exp(-300 * tc))
 			} else if clkType == "Pocket Watch" {
 				let body = (sin(2 * Double.pi * 4000 * tc) * 0.1 + sin(2 * Double.pi * 6000 * tc) * 0.05) * exp(-200 * tc)
-				clkProto[i] = Float(body) + randomGaussian * Float(exp(-800 * tc)) * 1.5
+				clk[i] = Float(body) + randomGaussian * Float(exp(-800 * tc)) * 1.5
 			} else if clkType == "Grandfather Clock" {
 				let body = (sin(2 * Double.pi * 350 * tc) * 0.2 + sin(2 * Double.pi * 800 * tc) * 0.1) * exp(-60 * tc)
-				clkProto[i] = Float(body) + randomGaussian * Float(exp(-500 * tc)) * 1.2
+				clk[i] = Float(body) + randomGaussian * Float(exp(-500 * tc)) * 1.2
 			} else {
 				let body = (sin(2 * Double.pi * 1000 * tc) * 0.3 + sin(2 * Double.pi * 2000 * tc) * 0.1) * exp(-100 * tc)
-				clkProto[i] = Float(body) + randomGaussian * Float(exp(-600 * tc)) * 1.2
+				clk[i] = Float(body) + randomGaussian * Float(exp(-600 * tc)) * 1.2
 			}
-		}
-		
-		if syncClock {
-			clk = [Float](repeating: 0, count: nBeat)
-			let tickInterval = nBeat / ticksPerBeat
-			for i in 0..<ticksPerBeat {
-				let startIdx = i * tickInterval
-				let copyLen = min(nClockProto, nBeat - startIdx)
-				for j in 0..<copyLen {
-					clk[startIdx + j] += clkProto[j]
-				}
-			}
-			nClock = nBeat
-		} else {
-			clk = clkProto
-			nClock = nClockProto
 		}
 	}
 	
@@ -858,7 +868,6 @@ class AudioEngineManager: ObservableObject {
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
 			do {
-				// Re-verify and strictly configure the context session state BEFORE touching the active node pipelines.
 				let session = AVAudioSession.sharedInstance()
 				let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
 				try session.setCategory(.playback, mode: .default, options: options)
@@ -866,17 +875,14 @@ class AudioEngineManager: ObservableObject {
 				
 				if sourceNode == nil { setupAudio() }
 				
+				resetDynamicBPM()
+				
 				engine.prepare()
 				try engine.start()
 				
-				// Added dispatch security buffer to let core AudioGraph finish hardware alignment before pushing data streams
 				DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
 					guard let self = self else { return }
-					// Verify engine didn't immediately stall during line negotiation
-					guard self.engine.isRunning else {
-						print("Engine stalled safely before channel explosion protection triggered.")
-						return
-					}
+					guard self.engine.isRunning else { return }
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.player?.play() }
@@ -884,30 +890,20 @@ class AudioEngineManager: ObservableObject {
 					self.updateNowPlaying()
 					UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
 				}
-			} catch { 
-				print("Engine start error: \(error)") 
-			}
+			} catch { print("Engine start error: \(error)") }
 		}
 	}
 	
 	private func setupMediaControls() {
 		let commandCenter = MPRemoteCommandCenter.shared()
-		
 		commandCenter.playCommand.addTarget { [weak self] _ in
 			guard let self = self else { return .commandFailed }
-			if !self.isPlaying {
-				self.playStop()
-				return .success
-			}
+			if !self.isPlaying { self.playStop(); return .success }
 			return .commandFailed
 		}
-		
 		commandCenter.pauseCommand.addTarget { [weak self] _ in
 			guard let self = self else { return .commandFailed }
-			if self.isPlaying {
-				self.playStop()
-				return .success
-			}
+			if self.isPlaying { self.playStop(); return .success }
 			return .commandFailed
 		}
 	}
@@ -924,15 +920,12 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self, let userInfo = notification.userInfo,
 				  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
 				  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-			
 			if type == .began {
 				if self.isPlaying { self.playStop() }
 			} else if type == .ended {
 				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
 				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-				if options.contains(.shouldResume) {
-					if !self.isPlaying { self.playStop() }
-				}
+				if options.contains(.shouldResume) { if !self.isPlaying { self.playStop() } }
 			}
 		}
 		
@@ -940,7 +933,6 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self, let userInfo = notification.userInfo,
 				  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-			
 			if reason == .oldDeviceUnavailable {
 				if self.isPlaying { self.playStop() }
 			}
@@ -954,9 +946,7 @@ class AudioEngineManager: ObservableObject {
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.player?.play() }
-				} catch {
-					print("Failed to restart engine after config change: \(error)")
-				}
+				} catch {}
 			}
 		}
 	}
@@ -978,22 +968,15 @@ struct MediaPicker: UIViewControllerRepresentable {
 
 	func updateUIViewController(_ uiViewController: MPMediaPickerController, context: Context) {}
 
-	func makeCoordinator() -> Coordinator {
-		Coordinator(self)
-	}
+	func makeCoordinator() -> Coordinator { Coordinator(self) }
 
 	class Coordinator: NSObject, MPMediaPickerControllerDelegate {
 		let parent: MediaPicker
-		
-		init(_ parent: MediaPicker) {
-			self.parent = parent
-		}
-		
+		init(_ parent: MediaPicker) { self.parent = parent }
 		func mediaPicker(_ mediaPicker: MPMediaPickerController, didPickMediaItems mediaItemCollection: MPMediaItemCollection) {
 			parent.onPicked(mediaItemCollection)
 			parent.isPresented = false
 		}
-		
 		func mediaPickerDidCancel(_ mediaPicker: MPMediaPickerController) {
 			parent.isPresented = false
 		}
@@ -1006,13 +989,10 @@ struct TrackRowView: View {
 	
 	var body: some View {
 		VStack(alignment: .leading) {
-			Text(track.name)
-				.font(.headline)
+			Text(track.name).font(.headline)
 			Slider(value: $track.volume, in: 0...1)
 				.accessibilityLabel("\(track.name) Volume")
-				.onChange(of: track.volume) { _ in
-					engine.saveTracks()
-				}
+				.onChange(of: track.volume) { _ in engine.saveTracks() }
 		}
 		.padding(.vertical, 4)
 	}
@@ -1029,27 +1009,20 @@ struct SoundscapeView: View {
 				Section(header: Text("Organic Elements").accessibilityHidden(true)) {
 					VStack(alignment: .leading) {
 						Text("Rain Volume").accessibilityHidden(true)
-						Slider(value: $engine.rainVolume, in: 0...1)
-							.accessibilityLabel("Rain Volume")
+						Slider(value: $engine.rainVolume, in: 0...1).accessibilityLabel("Rain Volume")
 					}
 					VStack(alignment: .leading) {
 						Text("Organic Heartbeat Volume").accessibilityHidden(true)
-						Slider(value: $engine.organicHeartbeatVolume, in: 0...1)
-							.accessibilityLabel("Organic Heartbeat Volume")
+						Slider(value: $engine.organicHeartbeatVolume, in: 0...1).accessibilityLabel("Organic Heartbeat Volume")
 					}
 				}
-				
 				Section(header: Text("Imported Audio")) {
 					if engine.importedTracks.isEmpty {
-						Text("No files imported.")
-							.foregroundColor(.secondary)
+						Text("No files imported.").foregroundColor(.secondary)
 					} else {
 						ForEach(engine.importedTracks) { track in
 							TrackRowView(track: track, engine: engine)
-						}
-						.onDelete { offsets in
-							engine.removeTracks(at: offsets)
-						}
+						}.onDelete { offsets in engine.removeTracks(at: offsets) }
 					}
 				}
 			}
@@ -1065,10 +1038,8 @@ struct SoundscapeView: View {
 			}
 			.fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
 				switch result {
-				case .success(let urls):
-					for url in urls { engine.addFile(url: url) }
-				case .failure(let error):
-					print(error)
+				case .success(let urls): for url in urls { engine.addFile(url: url) }
+				case .failure(let error): print(error)
 				}
 			}
 			.sheet(isPresented: $showingMusicPicker) {
@@ -1086,18 +1057,28 @@ struct GeneratorView: View {
 		Form {
 			Section(header: Text("Base Speed & Tone Profile").accessibilityHidden(true)) {
 				Picker("Tone Profile", selection: $engine.selectedProfileIndex) {
-					ForEach(0..<engine.profiles.count, id: \.self) {
-						Text(engine.profiles[$0].name)
-					}
+					ForEach(0..<engine.profiles.count, id: \.self) { Text(engine.profiles[$0].name) }
 				}
 				.pickerStyle(MenuPickerStyle())
 			}
 			
+			Section(header: Text("Heartbeat Dynamics").accessibilityHidden(true)) {
+				Toggle("Fluid Slow Down Over Time", isOn: $engine.enableSlowdown)
+				if engine.enableSlowdown {
+					VStack(alignment: .leading) {
+						Text("Target BPM: \(Int(engine.targetBPM))")
+						Slider(value: $engine.targetBPM, in: 15...80, step: 1)
+					}
+					VStack(alignment: .leading) {
+						Text("Duration: \(Int(engine.slowdownMinutes)) Minutes")
+						Slider(value: $engine.slowdownMinutes, in: 5...120, step: 5)
+					}
+				}
+			}
+			
 			Section(header: Text("Heartbeat Anatomy Spatial Placement").accessibilityHidden(true)) {
 				Picker("Placement", selection: $engine.placementIndex) {
-					ForEach(0..<engine.placementOptions.count, id: \.self) {
-						Text(engine.placementOptions[$0])
-					}
+					ForEach(0..<engine.placementOptions.count, id: \.self) { Text(engine.placementOptions[$0]) }
 				}
 				.pickerStyle(SegmentedPickerStyle())
 				.accessibilityLabel("Heartbeat Anatomy Spatial Placement")
@@ -1106,38 +1087,30 @@ struct GeneratorView: View {
 			Section(header: Text("Procedural Layer Mixer").accessibilityHidden(true)) {
 				VStack(alignment: .leading) {
 					Text("Synth Heartbeat").accessibilityHidden(true)
-					Slider(value: $engine.heartbeatVolume, in: 0...1)
-						.accessibilityLabel("Synth Heartbeat Volume")
+					Slider(value: $engine.heartbeatVolume, in: 0...1).accessibilityLabel("Synth Heartbeat Volume")
 					Picker("Heartbeat Pan", selection: $engine.panHeartIndex) {
 						ForEach(0..<engine.panOptions.count, id: \.self) { Text(engine.panOptions[$0]) }
 					}
-				}
-				.padding(.vertical, 4)
+				}.padding(.vertical, 4)
 				
 				VStack(alignment: .leading) {
 					Text("Clock Ticking").accessibilityHidden(true)
-					Slider(value: $engine.clockVolume, in: 0...1)
-						.accessibilityLabel("Clock Volume")
+					Slider(value: $engine.clockVolume, in: 0...1).accessibilityLabel("Clock Volume")
 					Picker("Clock Type", selection: $engine.clockTypeIndex) {
 						ForEach(0..<engine.clockOptions.count, id: \.self) { Text(engine.clockOptions[$0]) }
 					}
 					Toggle("Sync to Heartbeat", isOn: $engine.syncClock)
-				}
-				.padding(.vertical, 4)
+				}.padding(.vertical, 4)
 				
 				VStack(alignment: .leading) {
 					Text("Brown Noise").accessibilityHidden(true)
-					Slider(value: $engine.brownVolume, in: 0...1)
-						.accessibilityLabel("Brown Noise Volume")
-				}
-				.padding(.vertical, 4)
+					Slider(value: $engine.brownVolume, in: 0...1).accessibilityLabel("Brown Noise Volume")
+				}.padding(.vertical, 4)
 				
 				VStack(alignment: .leading) {
 					Text("Slow Breathing Base").accessibilityHidden(true)
-					Slider(value: $engine.breathVolume, in: 0...1)
-						.accessibilityLabel("Slow Breathing Volume")
-				}
-				.padding(.vertical, 4)
+					Slider(value: $engine.breathVolume, in: 0...1).accessibilityLabel("Slow Breathing Volume")
+				}.padding(.vertical, 4)
 			}
 		}
 	}
@@ -1148,24 +1121,27 @@ struct BreathingView: View {
 	var body: some View {
 		VStack(spacing: 30) {
 			Text(engine.currentBreathingPhase)
-				.font(.largeTitle)
-				.bold()
+				.font(.largeTitle).bold()
 				.accessibilityLabel("Current Phase: \(engine.currentBreathingPhase)")
 			
-			HStack(spacing: 20) {
-				Button("4-7-8 Relax") { engine.startBreathingExercise(inhale: 4, hold1: 7, exhale: 8, hold2: 0) }
-					.buttonStyle(.borderedProminent)
-					.disabled(engine.isBreathing)
-				
-				Button("Box Breathing") { engine.startBreathingExercise(inhale: 4, hold1: 4, exhale: 4, hold2: 4) }
-					.buttonStyle(.borderedProminent)
-					.disabled(engine.isBreathing)
-			}
+			Toggle("Sync Cues to Heartbeat Rhythm", isOn: $engine.syncBreathing)
+				.padding(.horizontal, 40)
+				.onChange(of: engine.syncBreathing) { synced in
+					if synced && engine.isBreathing { engine.stopBreathingExercise() }
+				}
 			
-			if engine.isBreathing {
-				Button("Stop Exercise") { engine.stopBreathingExercise() }
-					.foregroundColor(.red)
-					.padding(.top, 20)
+			if !engine.syncBreathing {
+				HStack(spacing: 20) {
+					Button("4-7-8 Relax") { engine.startBreathingExercise(inhale: 4, hold1: 7, exhale: 8, hold2: 0) }
+						.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
+					Button("Box Breathing") { engine.startBreathingExercise(inhale: 4, hold1: 4, exhale: 4, hold2: 4) }
+						.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
+				}
+				
+				if engine.isBreathing {
+					Button("Stop Exercise") { engine.stopBreathingExercise() }
+						.foregroundColor(.red).padding(.top, 20)
+				}
 			}
 		}
 	}
@@ -1184,7 +1160,6 @@ struct AlarmView: View {
 						.datePickerStyle(WheelDatePickerStyle())
 						.accessibilityLabel("Set Alarm Time")
 				}
-				
 				Section(header: Text("Alarm Track")) {
 					HStack {
 						Text(engine.alarmTrackNameStorage)
@@ -1195,7 +1170,6 @@ struct AlarmView: View {
 						}
 					}
 				}
-				
 				Section {
 					Toggle("Alarm Enabled", isOn: $engine.isAlarmOn)
 				}
@@ -1204,10 +1178,8 @@ struct AlarmView: View {
 			.navigationBarTitleDisplayMode(.inline)
 			.fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
 				switch result {
-				case .success(let urls):
-					if let url = urls.first { engine.addFile(url: url, isAlarm: true) }
-				case .failure(let error):
-					print(error)
+				case .success(let urls): if let url = urls.first { engine.addFile(url: url, isAlarm: true) }
+				case .failure(let error): print(error)
 				}
 			}
 			.sheet(isPresented: $showingMusicPicker) {
@@ -1227,6 +1199,16 @@ struct SettingsView: View {
 				Toggle("Mix with other apps", isOn: $engine.mixWithOthers)
 					.accessibilityHint("Allows Sleep Engine to play while watching YouTube or listening to podcasts.")
 			}
+			Section(header: Text("3D Room Spatialization")) {
+				Toggle("Enable 3D Binaural Orbit", isOn: $engine.master3DOrbit)
+					.accessibilityHint("Uses ITD sub-millisecond delay and head-shadow filtering to move sounds around your head.")
+				if engine.master3DOrbit {
+					Picker("Orbit Speed", selection: $engine.orbitSpeedIndex) {
+						Text("1 Minute Rotation").tag(0)
+						Text("5 Minute Rotation").tag(1)
+					}.pickerStyle(SegmentedPickerStyle())
+				}
+			}
 			Section(header: Text("Voice Preferences")) {
 				Toggle("Use Whispered Breathing Cues", isOn: $engine.useWhisper)
 			}
@@ -1242,32 +1224,24 @@ struct ContentView: View {
 			VStack {
 				Slider(value: $engine.masterVolume, in: 0...1)
 					.accessibilityLabel("Master Output Volume")
-					.padding(.horizontal)
-					.padding(.top, 10)
+					.padding(.horizontal).padding(.top, 10)
 				
 				Button(action: { engine.playStop() }) {
 					Text(engine.isPlaying ? "Stop All Audio" : "Play Master")
-						.frame(maxWidth: .infinity)
-						.padding()
+						.frame(maxWidth: .infinity).padding()
 						.background(engine.isPlaying ? Color.red.opacity(0.2) : Color.blue.opacity(0.2))
 						.cornerRadius(10)
 				}
-				.padding(.horizontal)
-				.padding(.bottom, 10)
+				.padding(.horizontal).padding(.bottom, 10)
 			}
 			.background(Color(UIColor.secondarySystemBackground).shadow(radius: 1))
 			
 			TabView {
-				SoundscapeView(engine: engine)
-					.tabItem { Label("Soundscape", systemImage: "waveform") }
-				GeneratorView(engine: engine)
-					.tabItem { Label("Generator", systemImage: "bolt.heart") }
-				BreathingView(engine: engine)
-					.tabItem { Label("Breathing", systemImage: "lungs") }
-				AlarmView(engine: engine)
-					.tabItem { Label("Alarm", systemImage: "alarm") }
-				SettingsView(engine: engine)
-					.tabItem { Label("Settings", systemImage: "gear") }
+				SoundscapeView(engine: engine).tabItem { Label("Soundscape", systemImage: "waveform") }
+				GeneratorView(engine: engine).tabItem { Label("Generator", systemImage: "bolt.heart") }
+				BreathingView(engine: engine).tabItem { Label("Breathing", systemImage: "lungs") }
+				AlarmView(engine: engine).tabItem { Label("Alarm", systemImage: "alarm") }
+				SettingsView(engine: engine).tabItem { Label("Settings", systemImage: "gear") }
 			}
 		}
 	}
