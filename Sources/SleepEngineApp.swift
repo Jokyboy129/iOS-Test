@@ -54,6 +54,7 @@ class ImportedTrack: Identifiable, ObservableObject {
 class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
+	let environmentNode = AVAudioEnvironmentNode()
 	
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
@@ -116,8 +117,8 @@ class AudioEngineManager: ObservableObject {
 	@AppStorage("syncBreathing") var syncBreathing = false
 	
 	// 3D Spatial Audio
-	@AppStorage("master3DOrbit") var master3DOrbit = false
-	@AppStorage("orbitSpeedIndex") var orbitSpeedIndex = 0
+	@AppStorage("master3DOrbit") var master3DOrbit = false { didSet { updateOrbitState() } }
+	@AppStorage("orbitSpeedIndex") var orbitSpeedIndex = 0 { didSet { updateOrbitState() } }
 	
 	@AppStorage("savedTracksJSON") var savedTracksJSON: Data = Data()
 	
@@ -133,6 +134,9 @@ class AudioEngineManager: ObservableObject {
 	var alarmPlayer: AVAudioPlayer?
 	var alarmTimer: Timer?
 	var fadeTimer: Timer?
+	
+	var orbitTimer: Timer?
+	var orbitAngle: Float = 0.0
 	
 	// Generator Buffers & State
 	private var brownL = [Float]()
@@ -154,11 +158,6 @@ class AudioEngineManager: ObservableObject {
 	private var beatCounter: Int = 0
 	private var clkPlayIdx: Int = Int.max
 	private var clkPlayIdx2: Int = Int.max
-	
-	// Binaural Delay Lines
-	private var delayLineL = [Float](repeating: 0, count: 2048)
-	private var delayLineR = [Float](repeating: 0, count: 2048)
-	private var delayIdx = 0
 	
 	private var breathingTask: Task<Void, Never>?
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -509,6 +508,24 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
+	func updateOrbitState() {
+		orbitTimer?.invalidate()
+		if !master3DOrbit {
+			environmentNode.listenerAngularOrientation = AVAudio3DAngularOrientation(yaw: 0, pitch: 0, roll: 0)
+			return
+		}
+		let fps = 60.0
+		let period = orbitSpeedIndex == 0 ? 60.0 : 300.0
+		let degreesPerFrame = Float((360.0 / period) / fps)
+		
+		orbitTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / fps, repeats: true) { [weak self] _ in
+			guard let self = self else { return }
+			self.orbitAngle += degreesPerFrame
+			if self.orbitAngle >= 360 { self.orbitAngle -= 360 }
+			self.environmentNode.listenerAngularOrientation = AVAudio3DAngularOrientation(yaw: self.orbitAngle, pitch: 0, roll: 0)
+		}
+	}
+	
 	private func setupAudio() {
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		
@@ -685,39 +702,8 @@ class AudioEngineManager: ObservableObject {
 					chunkBrR = pannedBr.1
 				}
 				
-				var finalL = (chunkHL + chunkCL + chunkBL + chunkBrL) / totalGain
-				var finalR = (chunkHR + chunkCR + chunkBR + chunkBrR) / totalGain
-				
-				if self.master3DOrbit {
-					let period: Double = self.orbitSpeedIndex == 0 ? 60.0 : 300.0
-					let angle = 2.0 * Double.pi * Double(currentFrame) / (self.sampleRate * period)
-					let maxDelay: Float = 35.0
-					let delayL = maxDelay * Float(0.5 - 0.5 * sin(angle))
-					let delayR = maxDelay * Float(0.5 + 0.5 * sin(angle))
-					let gainL = Float(0.7 + 0.3 * cos(angle + Double.pi/2))
-					let gainR = Float(0.7 + 0.3 * cos(angle - Double.pi/2))
-					let depthGain = Float(0.85 - 0.15 * cos(angle))
-					
-					self.delayLineL[self.delayIdx] = finalL
-					self.delayLineR[self.delayIdx] = finalR
-					
-					let readPosL = Float(self.delayIdx) - delayL + 2048.0
-					let idxL1 = Int(readPosL) % 2048
-					let idxL2 = (idxL1 + 1) % 2048
-					let fracL = readPosL - floor(readPosL)
-					let sampL = self.delayLineL[idxL1] * (1 - fracL) + self.delayLineL[idxL2] * fracL
-					
-					let readPosR = Float(self.delayIdx) - delayR + 2048.0
-					let idxR1 = Int(readPosR) % 2048
-					let idxR2 = (idxR1 + 1) % 2048
-					let fracR = readPosR - floor(readPosR)
-					let sampR = self.delayLineR[idxR1] * (1 - fracR) + self.delayLineR[idxR2] * fracR
-					
-					finalL = sampL * gainL * depthGain
-					finalR = sampR * gainR * depthGain
-					
-					self.delayIdx = (self.delayIdx + 1) % 2048
-				}
+				let finalL = (chunkHL + chunkCL + chunkBL + chunkBrL) / totalGain
+				let finalR = (chunkHR + chunkCR + chunkBR + chunkBrR) / totalGain
 				
 				let ptrL = ablPointer[0].mData?.assumingMemoryBound(to: Float.self)
 				let ptrR = ablPointer[1].mData?.assumingMemoryBound(to: Float.self)
@@ -730,8 +716,13 @@ class AudioEngineManager: ObservableObject {
 		}
 		
 		if let node = sourceNode {
+			engine.attach(environmentNode)
+			environmentNode.outputType = .headphones
+			environmentNode.renderingAlgorithm = .HRTFHQ
+			
 			engine.attach(node)
-			engine.connect(node, to: engine.mainMixerNode, format: format)
+			engine.connect(node, to: environmentNode, format: format)
+			engine.connect(environmentNode, to: engine.mainMixerNode, format: format)
 		}
 	}
 	
@@ -864,6 +855,7 @@ class AudioEngineManager: ObservableObject {
 			rainPlayer?.pause()
 			organicHeartbeatPlayer?.pause()
 			for track in importedTracks { track.player?.pause() }
+			orbitTimer?.invalidate()
 			isPlaying = false
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
@@ -876,6 +868,7 @@ class AudioEngineManager: ObservableObject {
 				if sourceNode == nil { setupAudio() }
 				
 				resetDynamicBPM()
+				updateOrbitState()
 				
 				engine.prepare()
 				try engine.start()
@@ -1142,6 +1135,12 @@ struct BreathingView: View {
 					Button("Stop Exercise") { engine.stopBreathingExercise() }
 						.foregroundColor(.red).padding(.top, 20)
 				}
+			} else {
+				Text("Manual exercises are disabled because breathing is actively bound to the fluid heartbeat BPM.")
+					.font(.footnote)
+					.foregroundColor(.secondary)
+					.multilineTextAlignment(.center)
+					.padding(.horizontal, 40)
 			}
 		}
 	}
@@ -1201,7 +1200,7 @@ struct SettingsView: View {
 			}
 			Section(header: Text("3D Room Spatialization")) {
 				Toggle("Enable 3D Binaural Orbit", isOn: $engine.master3DOrbit)
-					.accessibilityHint("Uses ITD sub-millisecond delay and head-shadow filtering to move sounds around your head.")
+					.accessibilityHint("Uses Apple's HRTF engine to physically orbit the soundscape around your head.")
 				if engine.master3DOrbit {
 					Picker("Orbit Speed", selection: $engine.orbitSpeedIndex) {
 						Text("1 Minute Rotation").tag(0)
