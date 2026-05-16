@@ -58,7 +58,6 @@ class AudioEngineManager: ObservableObject {
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
 	var breathingPlayer: AVAudioPlayer?
-	var musicPlayer = MPMusicPlayerController.applicationQueuePlayer
 	var silentLoopPlayer: AVAudioPlayer?
 	
 	@Published var isPlaying = false
@@ -855,7 +854,6 @@ class AudioEngineManager: ObservableObject {
 			rainPlayer?.pause()
 			organicHeartbeatPlayer?.pause()
 			for track in importedTracks { track.player?.pause() }
-			musicPlayer.pause()
 			isPlaying = false
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 		} else {
@@ -882,7 +880,6 @@ class AudioEngineManager: ObservableObject {
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.player?.play() }
-					self.musicPlayer.play()
 					self.isPlaying = true
 					self.updateNowPlaying()
 					UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
