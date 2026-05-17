@@ -2,7 +2,7 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 import UniformTypeIdentifiers
-import UIKit
+import CoreHaptics
 
 struct HeartbeatProfile: Hashable, Codable {
 	let name: String
@@ -67,6 +67,8 @@ class AudioEngineManager: ObservableObject {
 	var organicHeartbeatPlayer: AVAudioPlayer?
 	var breathingPlayer: AVAudioPlayer?
 	var silentLoopPlayer: AVAudioPlayer?
+	
+	var hapticEngine: CHHapticEngine?
 	
 	@Published var isPlaying = false
 	@Published var isAlarmRinging = false
@@ -205,11 +207,45 @@ class AudioEngineManager: ObservableObject {
 		loadAlarmTrack()
 		setupMediaControls()
 		setupObservers()
+		setupCoreHaptics()
 		resetDynamicBPM()
 		rebuildPrototypes()
 		updateVolumes()
 		startTimersMonitor()
 		toggleSilentBackgroundLoop()
+	}
+	
+	private func setupCoreHaptics() {
+		guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
+		do {
+			hapticEngine = try CHHapticEngine()
+			try hapticEngine?.start()
+			
+			hapticEngine?.stoppedHandler = { reason in
+				print("Haptic Engine stopped: \(reason)")
+				do { try self.hapticEngine?.start() } catch {}
+			}
+			hapticEngine?.resetHandler = {
+				do { try self.hapticEngine?.start() } catch {}
+			}
+		} catch {
+			print("CoreHaptics error: \(error)")
+		}
+	}
+	
+	func triggerCustomHeartbeatHaptic(isLub: Bool) {
+		guard enableHaptics, CHHapticEngine.capabilitiesForHardware().supportsHaptics, let engine = hapticEngine else { return }
+		
+		let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: isLub ? 1.0 : 0.6)
+		let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.0)
+		
+		let event = CHHapticEvent(eventType: .hapticTransient, parameters: [intensity, sharpness], relativeTime: 0)
+		
+		do {
+			let pattern = try CHHapticPattern(events: [event], parameters: [])
+			let player = try engine.makePlayer(with: pattern)
+			try player.start(atTime: 0)
+		} catch {}
 	}
 	
 	private func applyAudioSessionSettings() {
@@ -710,8 +746,8 @@ class AudioEngineManager: ObservableObject {
 	private func setupAudio() {
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		
-		// Initialize Haas buffer for 2ms delay at current sample rate
-		let delaySamples = Int(0.002 * sampleRate)
+		// Initialize Haas buffer for 15ms delay at current sample rate
+		let delaySamples = Int(0.015 * sampleRate)
 		if haasBuffer.count != delaySamples {
 			haasBuffer = [Float](repeating: 0, count: delaySamples)
 			haasIdx = 0
@@ -786,9 +822,7 @@ class AudioEngineManager: ObservableObject {
 						self.beatCounter += 1
 						self.clkPlayIdx = 0
 						
-						if self.enableHaptics {
-							DispatchQueue.main.async { let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred() }
-						}
+						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						
 						if self.syncBreathing {
 							let phaseBeat = self.beatCounter % 8
@@ -802,9 +836,7 @@ class AudioEngineManager: ObservableObject {
 					}
 					
 					if self.tBeat >= config.dubDelay && self.tBeat - dt < config.dubDelay {
-						if self.enableHaptics {
-							DispatchQueue.main.async { let gen = UIImpactFeedbackGenerator(style: .soft); gen.impactOccurred() }
-						}
+						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) }
 					}
 					
 					if ticksPerBeat == 2 && self.tBeat >= (beatDuration / 2.0) && self.tBeat - dt < (beatDuration / 2.0) {
@@ -874,9 +906,7 @@ class AudioEngineManager: ObservableObject {
 						self.beatCounter += 1
 						self.clkPlayIdx = 0
 						
-						if self.enableHaptics {
-							DispatchQueue.main.async { let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred() }
-						}
+						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						
 						if self.syncBreathing {
 							let phaseBeat = self.beatCounter % 8
@@ -891,9 +921,7 @@ class AudioEngineManager: ObservableObject {
 					
 					let dubStartIdx = Int(config.dubDelay * self.sampleRate)
 					if idxBeat == dubStartIdx {
-						if self.enableHaptics {
-							DispatchQueue.main.async { let gen = UIImpactFeedbackGenerator(style: .soft); gen.impactOccurred() }
-						}
+						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) }
 					}
 					
 					let clockType = self.clockOptions[self.clockTypeIndex]
@@ -912,12 +940,12 @@ class AudioEngineManager: ObservableObject {
 				hL += self.whooshL[idxNoise] * flowEnv * wVol
 				hR += self.whooshR[idxNoise] * flowEnv * wVol
 				
-				// Haas Effect Processing (Right Channel Micro-Delay)
+				// Haas Effect Processing (15ms Delay + Subtle Head Shadowing on Right Ear)
 				if self.enableHaasEffect && self.haasBuffer.count > 0 {
 					let delayedR = self.haasBuffer[self.haasIdx]
 					self.haasBuffer[self.haasIdx] = hR
 					self.haasIdx = (self.haasIdx + 1) % self.haasBuffer.count
-					hR = delayedR
+					hR = delayedR * 0.85 // Lower volume slightly to simulate head shadow
 				}
 				
 				let posH = self.getPanPos(mode: self.panHeartIndex, time: tChunk)
@@ -1066,7 +1094,6 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 		
-		// Trigonometric Equal-Power Crossfade to prevent 3dB dips in uncorrelated noise
 		for i in 0..<crossfadeLength {
 			let ratio = Float(i) / Float(crossfadeLength)
 			let fadeOut = cos(ratio * Float.pi / 2.0)
@@ -1178,7 +1205,6 @@ class AudioEngineManager: ObservableObject {
 		self.lubEnv = localLubEnv
 		self.dubEnv = localDubEnv
 		
-		// Expanded noise buffer to 30 seconds to prevent repetitive artifacts
 		nNoise = Int(sampleRate * 30.0)
 		if brownL.isEmpty {
 			brownL = generateSeamlessNoise(length: nNoise, isBrown: true)
@@ -1617,11 +1643,11 @@ struct SettingsView: View {
 		Form {
 			Section(header: Text("Intimacy & Immersion")) {
 				Toggle("Haptic Heartbeat Synchronization", isOn: $engine.enableHaptics)
-					.accessibilityHint("Uses the Taptic Engine to let you physically feel the heartbeat slowing down.")
+					.accessibilityHint("Uses the Taptic Engine to let you physically feel the heartbeat. (Only works while the device is unlocked).")
 				Toggle("Psychoacoustic Proximity (Haas Effect)", isOn: $engine.enableHaasEffect)
-					.accessibilityHint("Adds micro-delays to make the audio feel physically closer to your ears.")
+					.accessibilityHint("Adds micro-delays and head-shadowing to pull the audio intimately close to your ears.")
 				Toggle("Enhanced Vocal Anchors", isOn: $engine.enableEnhancedAnchors)
-					.accessibilityHint("Adds random spatial whispered words like 'relax' and 'drifting' during breathing exercises.")
+					.accessibilityHint("Spawns random spatial whispers like 'relax' and 'drifting' around your head during breathing holds.")
 			}
 			
 			Section(header: Text("Audio Behavior")) {
