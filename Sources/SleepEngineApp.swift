@@ -1,3 +1,4 @@
+// Sources/SleepEngineApp.swift
 import SwiftUI
 import AVFoundation
 import MediaPlayer
@@ -133,6 +134,7 @@ class AudioEngineManager: ObservableObject {
 	
 	// Breathing Sync
 	@AppStorage("syncBreathing") var syncBreathing = false
+	@AppStorage("useRealBreathing") var useRealBreathing = true
 	
 	@AppStorage("savedTracksJSON") var savedTracksJSON: Data = Data()
 	
@@ -178,6 +180,9 @@ class AudioEngineManager: ObservableObject {
 	private var whooshR = [Float]()
 	private var clk = [Float]()
 	
+	private var realInhaleBuffer = [Float]()
+	private var realExhaleBuffer = [Float]()
+	
 	private var nNoise = 0
 	private var frameIdx = 0
 	private let sampleRate: Double = 44100.0
@@ -199,6 +204,11 @@ class AudioEngineManager: ObservableObject {
 		generateSilentWavIfNeeded()
 		applyAudioSessionSettings()
 		setupOrganicPlayers()
+		
+		// Load Real Breathing WAVs into memory
+		realInhaleBuffer = loadWAV(filename: "REAL_INHALE")
+		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE")
+		
 		loadTracks()
 		loadAlarmTrack()
 		setupMediaControls()
@@ -209,6 +219,31 @@ class AudioEngineManager: ObservableObject {
 		updateVolumes()
 		startTimersMonitor()
 		toggleSilentBackgroundLoop()
+	}
+	
+	private func loadWAV(filename: String) -> [Float] {
+		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav"),
+			  let file = try? AVAudioFile(forReading: url) else { return [] }
+		
+		guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else { return [] }
+		do {
+			try file.read(into: buffer)
+		} catch {
+			return []
+		}
+		
+		guard let channelData = buffer.floatChannelData?[0] else { return [] }
+		return Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
+	}
+	
+	private func getPingPongIndex(index: Int, count: Int) -> Int {
+		if count <= 0 { return 0 }
+		let cycle = index % (2 * count)
+		if cycle < count {
+			return cycle
+		} else {
+			return 2 * count - cycle - 1
+		}
 	}
 	
 	private func setupCoreHaptics() {
@@ -962,6 +997,10 @@ class AudioEngineManager: ObservableObject {
 				var chunkBrR: Float = 0
 				if vBreath > 0 {
 					let breathEnv: Float
+					var inhale: Float = 0
+					var exhale: Float = 0
+					var sampleIdxForRealBreath = 0
+					
 					if self.syncBreathing {
 						let syncPhase: Double
 						if self.enableSlowdown {
@@ -970,18 +1009,49 @@ class AudioEngineManager: ObservableObject {
 							let beatRatio = Double(currentFrame % self.nBeat) / Double(self.nBeat)
 							syncPhase = Double(self.beatCounter % 8) + beatRatio
 						}
-						var inhale: Float = 0, exhale: Float = 0
-						if syncPhase < 4.0 { inhale = Float(sin(Double.pi * syncPhase / 4.0)) }
-						if syncPhase >= 4.0 && syncPhase < 8.0 { exhale = Float(sin(Double.pi * (syncPhase - 4.0) / 4.0)) }
+						
+						if syncPhase < 4.0 {
+							inhale = Float(sin(Double.pi * syncPhase / 4.0))
+							sampleIdxForRealBreath = Int((syncPhase / 4.0) * (4.0 * beatDuration * self.sampleRate))
+						}
+						if syncPhase >= 4.0 && syncPhase < 8.0 {
+							exhale = Float(sin(Double.pi * (syncPhase - 4.0) / 4.0))
+							sampleIdxForRealBreath = Int(((syncPhase - 4.0) / 4.0) * (4.0 * beatDuration * self.sampleRate))
+						}
 						breathEnv = max(0, inhale * 0.8 + exhale * 0.6)
 					} else {
 						let breathPhase = fmod(tChunk / 6.0, 1.0)
-						let inhale: Float = (breathPhase < 0.45) ? sin(Float.pi * (breathPhase / 0.45)) : 0.0
-						let exhale: Float = (breathPhase >= 0.5 && breathPhase < 0.95) ? sin(Float.pi * ((breathPhase - 0.5) / 0.45)) : 0.0
+						if breathPhase < 0.45 {
+							inhale = sin(Float.pi * (breathPhase / 0.45))
+							sampleIdxForRealBreath = Int((breathPhase / 0.45) * (0.45 * 6.0 * Float(self.sampleRate)))
+						}
+						if breathPhase >= 0.5 && breathPhase < 0.95 {
+							exhale = sin(Float.pi * ((breathPhase - 0.5) / 0.45))
+							sampleIdxForRealBreath = Int(((breathPhase - 0.5) / 0.45) * (0.45 * 6.0 * Float(self.sampleRate)))
+						}
 						breathEnv = max(0, inhale * 0.8 + exhale * 0.6)
 					}
+					
+					var breathSampleL: Float = 0
+					var breathSampleR: Float = 0
+					
+					if self.useRealBreathing && (!self.realInhaleBuffer.isEmpty || !self.realExhaleBuffer.isEmpty) {
+						if inhale > 0 && !self.realInhaleBuffer.isEmpty {
+							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: self.realInhaleBuffer.count)
+							breathSampleL = self.realInhaleBuffer[idx]
+							breathSampleR = self.realInhaleBuffer[idx]
+						} else if exhale > 0 && !self.realExhaleBuffer.isEmpty {
+							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: self.realExhaleBuffer.count)
+							breathSampleL = self.realExhaleBuffer[idx]
+							breathSampleR = self.realExhaleBuffer[idx]
+						}
+					} else {
+						breathSampleL = self.breathL[idxNoise]
+						breathSampleR = self.breathR[idxNoise]
+					}
+					
 					let posBr = self.getPanPos(mode: self.panBreathIndex, time: tChunk)
-					let pannedBr = self.applyStereoPan(inL: self.breathL[idxNoise] * breathEnv, inR: self.breathR[idxNoise] * breathEnv, pos: posBr, vol: vBreath * 0.6)
+					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * 0.6)
 					chunkBrL = pannedBr.0
 					chunkBrR = pannedBr.1
 				}
@@ -1496,6 +1566,7 @@ struct GeneratorView: View {
 				VStack(alignment: .leading) {
 					Text("Slow Breathing Base").accessibilityHidden(true)
 					Slider(value: $engine.breathVolume, in: 0...1).accessibilityLabel("Slow Breathing Volume")
+					Toggle("Use Real Breathing Sounds", isOn: $engine.useRealBreathing)
 				}.padding(.vertical, 4)
 			}
 		}
