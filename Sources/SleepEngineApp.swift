@@ -179,9 +179,6 @@ class AudioEngineManager: ObservableObject {
 	private var whooshR = [Float]()
 	private var clk = [Float]()
 	
-	private var haasBuffer = [Float]()
-	private var haasIdx = 0
-	
 	private var nNoise = 0
 	private var frameIdx = 0
 	private let sampleRate: Double = 44100.0
@@ -746,13 +743,6 @@ class AudioEngineManager: ObservableObject {
 	private func setupAudio() {
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		
-		// Initialize Haas buffer for 15ms delay at current sample rate
-		let delaySamples = Int(0.015 * sampleRate)
-		if haasBuffer.count != delaySamples {
-			haasBuffer = [Float](repeating: 0, count: delaySamples)
-			haasIdx = 0
-		}
-		
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
 			guard let self = self else { return noErr }
 			let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
@@ -890,8 +880,14 @@ class AudioEngineManager: ObservableObject {
 					let combinedDub = Float((dub + subDub) * 0.8)
 					
 					if placement == "Center Beats & Flow" {
-						hL = (combinedLub + combinedDub) * 0.85
-						hR = (combinedLub + combinedDub) * 0.85
+						if self.enableHaasEffect {
+							// True ASMR Head Shadowing (Left Ear Bias)
+							hL = (combinedLub + combinedDub) * 1.2
+							hR = (combinedLub * 0.6) + (combinedDub * 0.15)
+						} else {
+							hL = (combinedLub + combinedDub) * 0.85
+							hR = (combinedLub + combinedDub) * 0.85
+						}
 					} else if placement == "Lub Left Ear / Dub Right Ear" {
 						hL = combinedLub; hR = combinedDub
 					} else {
@@ -930,23 +926,35 @@ class AudioEngineManager: ObservableObject {
 						self.clkPlayIdx2 = 0
 					}
 					
-					hL = self.lubL[idxBeat] + self.dubL[idxBeat]
-					hR = self.lubR[idxBeat] + self.dubR[idxBeat]
+					let currLubL = self.lubL[idxBeat]
+					let currLubR = self.lubR[idxBeat]
+					let currDubL = self.dubL[idxBeat]
+					let currDubR = self.dubR[idxBeat]
+					
+					if placement == "Center Beats & Flow" && self.enableHaasEffect {
+						hL = (currLubL + currDubL) * 1.2
+						hR = (currLubR * 0.6) + (currDubR * 0.15)
+					} else {
+						hL = currLubL + currDubL
+						hR = currLubR + currDubR
+					}
+					
 					flowEnv = 0.6 + 0.4 * (self.lubEnv[idxBeat] + self.dubEnv[idxBeat])
 				}
 				
 				let idxNoise = currentFrame % self.nNoise
 				let wVol = Float(config.whooshVol)
-				hL += self.whooshL[idxNoise] * flowEnv * wVol
-				hR += self.whooshR[idxNoise] * flowEnv * wVol
+				var wL = self.whooshL[idxNoise] * flowEnv * wVol
+				var wR = self.whooshR[idxNoise] * flowEnv * wVol
 				
-				// Haas Effect Processing (15ms Delay + Subtle Head Shadowing on Right Ear)
-				if self.enableHaasEffect && self.haasBuffer.count > 0 {
-					let delayedR = self.haasBuffer[self.haasIdx]
-					self.haasBuffer[self.haasIdx] = hR
-					self.haasIdx = (self.haasIdx + 1) % self.haasBuffer.count
-					hR = delayedR * 0.85 // Lower volume slightly to simulate head shadow
+				// Apply Head Shadowing to the high-frequency blood flow
+				if placement == "Center Beats & Flow" && self.enableHaasEffect {
+					wL *= 1.2
+					wR *= 0.15 
 				}
+				
+				hL += wL
+				hR += wR
 				
 				let posH = self.getPanPos(mode: self.panHeartIndex, time: tChunk)
 				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart)
@@ -1644,8 +1652,8 @@ struct SettingsView: View {
 			Section(header: Text("Intimacy & Immersion")) {
 				Toggle("Haptic Heartbeat Synchronization", isOn: $engine.enableHaptics)
 					.accessibilityHint("Uses the Taptic Engine to let you physically feel the heartbeat. (Only works while the device is unlocked).")
-				Toggle("Psychoacoustic Proximity (Haas Effect)", isOn: $engine.enableHaasEffect)
-					.accessibilityHint("Adds micro-delays and head-shadowing to pull the audio intimately close to your ears.")
+				Toggle("ASMR Proximity (Head Shadowing)", isOn: $engine.enableHaasEffect)
+					.accessibilityHint("Simulates resting your left ear directly on a chest by muffling high frequencies in the right ear.")
 				Toggle("Enhanced Vocal Anchors", isOn: $engine.enableEnhancedAnchors)
 					.accessibilityHint("Spawns random spatial whispers like 'relax' and 'drifting' around your head during breathing holds.")
 			}
