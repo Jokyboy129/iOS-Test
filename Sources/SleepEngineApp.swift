@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 import UniformTypeIdentifiers
+import UIKit
 
 struct HeartbeatProfile: Hashable, Codable {
 	let name: String
@@ -93,6 +94,7 @@ class AudioEngineManager: ObservableObject {
 	let panOptions = ["Center", "Left", "Right", "Soft Left", "Soft Right", "1 Minute Slow Shift", "5 Minute Slow Shift"]
 	let clockOptions = ["Quartz Wall Clock", "Pocket Watch", "Grandfather Clock", "Metronome"]
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
+	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
 	
 	@AppStorage("selectedProfileIndex") var selectedProfileIndex = 0 { didSet { resetDynamicBPM(); rebuildPrototypes(); updateNowPlaying() } }
 	@AppStorage("placementIndex") var placementIndex = 0 { didSet { rebuildPrototypes() } }
@@ -117,6 +119,11 @@ class AudioEngineManager: ObservableObject {
 	
 	@AppStorage("mixWithOthers") var mixWithOthers = false { didSet { applyAudioSessionSettings() } }
 	@AppStorage("useWhisper") var useWhisper = false
+	
+	// Intimacy & Immersion Toggles
+	@AppStorage("enableHaptics") var enableHaptics = false
+	@AppStorage("enableHaasEffect") var enableHaasEffect = false
+	@AppStorage("enableEnhancedAnchors") var enableEnhancedAnchors = false
 	
 	// Real-Time Slowdown Properties
 	@AppStorage("enableSlowdown") var enableSlowdown = false
@@ -169,6 +176,9 @@ class AudioEngineManager: ObservableObject {
 	private var whooshL = [Float]()
 	private var whooshR = [Float]()
 	private var clk = [Float]()
+	
+	private var haasBuffer = [Float]()
+	private var haasIdx = 0
 	
 	private var nNoise = 0
 	private var frameIdx = 0
@@ -614,21 +624,26 @@ class AudioEngineManager: ObservableObject {
 			self?.triggerAlarm(fadeDuration: 60.0)
 		}
 		simulationTask = task
-		// Wait 5 seconds so they can confirm volume, then start the 60s crossfade
 		DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: task)
 	}
 	
 	// MARK: - App Logic Functions
 	
-	func playBreathingCue(type: String) {
+	func playBreathingCue(type: String, isAnchor: Bool = false) {
 		let suffix = useWhisper ? "_WHISPER" : ""
 		let filename = "\(type)\(suffix)"
 		
 		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else { return }
 		do {
-			breathingPlayer = try AVAudioPlayer(contentsOf: url)
-			breathingPlayer?.volume = Float(masterVolume * dynamicVolumeMultiplier)
-			breathingPlayer?.play()
+			let player = try AVAudioPlayer(contentsOf: url)
+			player.volume = Float(masterVolume * dynamicVolumeMultiplier)
+			if isAnchor {
+				player.pan = Float.random(in: -0.8...0.8)
+			}
+			player.play()
+			
+			// We assign it to breathingPlayer to keep a reference alive
+			breathingPlayer = player
 		} catch {}
 	}
 	
@@ -647,7 +662,14 @@ class AudioEngineManager: ObservableObject {
 				if Task.isCancelled { break }
 				
 				if hold1 > 0 {
-					await MainActor.run { currentBreathingPhase = "Hold (\(hold1)s)"; playBreathingCue(type: "HOLD") }
+					await MainActor.run {
+						currentBreathingPhase = "Hold (\(hold1)s)"
+						if enableEnhancedAnchors && Bool.random() {
+							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
+						} else {
+							playBreathingCue(type: "HOLD")
+						}
+					}
 					try? await Task.sleep(nanoseconds: UInt64(hold1) * 1_000_000_000)
 					if Task.isCancelled { break }
 				}
@@ -657,7 +679,14 @@ class AudioEngineManager: ObservableObject {
 				if Task.isCancelled { break }
 				
 				if hold2 > 0 {
-					await MainActor.run { currentBreathingPhase = "Hold (\(hold2)s)"; playBreathingCue(type: "HOLD") }
+					await MainActor.run {
+						currentBreathingPhase = "Hold (\(hold2)s)"
+						if enableEnhancedAnchors && Bool.random() {
+							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
+						} else {
+							playBreathingCue(type: "HOLD")
+						}
+					}
 					try? await Task.sleep(nanoseconds: UInt64(hold2) * 1_000_000_000)
 				}
 			}
@@ -680,6 +709,13 @@ class AudioEngineManager: ObservableObject {
 	
 	private func setupAudio() {
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+		
+		// Initialize Haas buffer for 2ms delay at current sample rate
+		let delaySamples = Int(0.002 * sampleRate)
+		if haasBuffer.count != delaySamples {
+			haasBuffer = [Float](repeating: 0, count: delaySamples)
+			haasIdx = 0
+		}
 		
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
 			guard let self = self else { return noErr }
@@ -750,10 +786,24 @@ class AudioEngineManager: ObservableObject {
 						self.beatCounter += 1
 						self.clkPlayIdx = 0
 						
+						if self.enableHaptics {
+							DispatchQueue.main.async { let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred() }
+						}
+						
 						if self.syncBreathing {
 							let phaseBeat = self.beatCounter % 8
 							if phaseBeat == 0 { DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; self.playBreathingCue(type: "INHALE") } }
 							else if phaseBeat == 4 { DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; self.playBreathingCue(type: "EXHALE") } }
+							else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
+								let anchor = self.anchors.randomElement()!
+								DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
+							}
+						}
+					}
+					
+					if self.tBeat >= config.dubDelay && self.tBeat - dt < config.dubDelay {
+						if self.enableHaptics {
+							DispatchQueue.main.async { let gen = UIImpactFeedbackGenerator(style: .soft); gen.impactOccurred() }
 						}
 					}
 					
@@ -823,10 +873,26 @@ class AudioEngineManager: ObservableObject {
 					if idxBeat == 0 {
 						self.beatCounter += 1
 						self.clkPlayIdx = 0
+						
+						if self.enableHaptics {
+							DispatchQueue.main.async { let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred() }
+						}
+						
 						if self.syncBreathing {
 							let phaseBeat = self.beatCounter % 8
 							if phaseBeat == 0 { DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; self.playBreathingCue(type: "INHALE") } }
 							else if phaseBeat == 4 { DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; self.playBreathingCue(type: "EXHALE") } }
+							else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
+								let anchor = self.anchors.randomElement()!
+								DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
+							}
+						}
+					}
+					
+					let dubStartIdx = Int(config.dubDelay * self.sampleRate)
+					if idxBeat == dubStartIdx {
+						if self.enableHaptics {
+							DispatchQueue.main.async { let gen = UIImpactFeedbackGenerator(style: .soft); gen.impactOccurred() }
 						}
 					}
 					
@@ -845,6 +911,14 @@ class AudioEngineManager: ObservableObject {
 				let wVol = Float(config.whooshVol)
 				hL += self.whooshL[idxNoise] * flowEnv * wVol
 				hR += self.whooshR[idxNoise] * flowEnv * wVol
+				
+				// Haas Effect Processing (Right Channel Micro-Delay)
+				if self.enableHaasEffect && self.haasBuffer.count > 0 {
+					let delayedR = self.haasBuffer[self.haasIdx]
+					self.haasBuffer[self.haasIdx] = hR
+					self.haasIdx = (self.haasIdx + 1) % self.haasBuffer.count
+					hR = delayedR
+				}
 				
 				let posH = self.getPanPos(mode: self.panHeartIndex, time: tChunk)
 				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart)
@@ -1541,6 +1615,15 @@ struct SettingsView: View {
 	@ObservedObject var engine: AudioEngineManager
 	var body: some View {
 		Form {
+			Section(header: Text("Intimacy & Immersion")) {
+				Toggle("Haptic Heartbeat Synchronization", isOn: $engine.enableHaptics)
+					.accessibilityHint("Uses the Taptic Engine to let you physically feel the heartbeat slowing down.")
+				Toggle("Psychoacoustic Proximity (Haas Effect)", isOn: $engine.enableHaasEffect)
+					.accessibilityHint("Adds micro-delays to make the audio feel physically closer to your ears.")
+				Toggle("Enhanced Vocal Anchors", isOn: $engine.enableEnhancedAnchors)
+					.accessibilityHint("Adds random spatial whispered words like 'relax' and 'drifting' during breathing exercises.")
+			}
+			
 			Section(header: Text("Audio Behavior")) {
 				Toggle("Mix with other apps", isOn: $engine.mixWithOthers)
 					.accessibilityHint("Allows Sleep Engine to play while watching YouTube or listening to podcasts.")
