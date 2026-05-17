@@ -124,7 +124,6 @@ class AudioEngineManager: ObservableObject {
 	
 	// Intimacy & Immersion Toggles
 	@AppStorage("enableHaptics") var enableHaptics = false
-	@AppStorage("enableHaasEffect") var enableHaasEffect = false
 	@AppStorage("enableEnhancedAnchors") var enableEnhancedAnchors = false
 	
 	// Real-Time Slowdown Properties
@@ -880,14 +879,8 @@ class AudioEngineManager: ObservableObject {
 					let combinedDub = Float((dub + subDub) * 0.8)
 					
 					if placement == "Center Beats & Flow" {
-						if self.enableHaasEffect {
-							// True ASMR Head Shadowing (Left Ear Bias)
-							hL = (combinedLub + combinedDub) * 1.2
-							hR = (combinedLub * 0.6) + (combinedDub * 0.15)
-						} else {
-							hL = (combinedLub + combinedDub) * 0.85
-							hR = (combinedLub + combinedDub) * 0.85
-						}
+						hL = (combinedLub + combinedDub) * 0.85
+						hR = (combinedLub + combinedDub) * 0.85
 					} else if placement == "Lub Left Ear / Dub Right Ear" {
 						hL = combinedLub; hR = combinedDub
 					} else {
@@ -926,35 +919,15 @@ class AudioEngineManager: ObservableObject {
 						self.clkPlayIdx2 = 0
 					}
 					
-					let currLubL = self.lubL[idxBeat]
-					let currLubR = self.lubR[idxBeat]
-					let currDubL = self.dubL[idxBeat]
-					let currDubR = self.dubR[idxBeat]
-					
-					if placement == "Center Beats & Flow" && self.enableHaasEffect {
-						hL = (currLubL + currDubL) * 1.2
-						hR = (currLubR * 0.6) + (currDubR * 0.15)
-					} else {
-						hL = currLubL + currDubL
-						hR = currLubR + currDubR
-					}
-					
+					hL = self.lubL[idxBeat] + self.dubL[idxBeat]
+					hR = self.lubR[idxBeat] + self.dubR[idxBeat]
 					flowEnv = 0.6 + 0.4 * (self.lubEnv[idxBeat] + self.dubEnv[idxBeat])
 				}
 				
 				let idxNoise = currentFrame % self.nNoise
 				let wVol = Float(config.whooshVol)
-				var wL = self.whooshL[idxNoise] * flowEnv * wVol
-				var wR = self.whooshR[idxNoise] * flowEnv * wVol
-				
-				// Apply Head Shadowing to the high-frequency blood flow
-				if placement == "Center Beats & Flow" && self.enableHaasEffect {
-					wL *= 1.2
-					wR *= 0.15 
-				}
-				
-				hL += wL
-				hR += wR
+				hL += self.whooshL[idxNoise] * flowEnv * wVol
+				hR += self.whooshR[idxNoise] * flowEnv * wVol
 				
 				let posH = self.getPanPos(mode: self.panHeartIndex, time: tChunk)
 				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart)
@@ -1652,8 +1625,6 @@ struct SettingsView: View {
 			Section(header: Text("Intimacy & Immersion")) {
 				Toggle("Haptic Heartbeat Synchronization", isOn: $engine.enableHaptics)
 					.accessibilityHint("Uses the Taptic Engine to let you physically feel the heartbeat. (Only works while the device is unlocked).")
-				Toggle("ASMR Proximity (Head Shadowing)", isOn: $engine.enableHaasEffect)
-					.accessibilityHint("Simulates resting your left ear directly on a chest by muffling high frequencies in the right ear.")
 				Toggle("Enhanced Vocal Anchors", isOn: $engine.enableEnhancedAnchors)
 					.accessibilityHint("Spawns random spatial whispers like 'relax' and 'drifting' around your head during breathing holds.")
 			}
