@@ -68,6 +68,7 @@ class AudioEngineManager: ObservableObject {
 	var silentLoopPlayer: AVAudioPlayer?
 	
 	@Published var isPlaying = false
+	@Published var isAlarmRinging = false
 	@Published var isBreathing = false
 	@Published var importedTracks: [ImportedTrack] = []
 	@Published var dynamicVolumeMultiplier: Double = 1.0 {
@@ -476,7 +477,7 @@ class AudioEngineManager: ObservableObject {
 		
 		if nowHr == alHr && nowMin == alMin && nowSec == 0 {
 			isMorningFadeActive = false
-			triggerAlarm(fadeDuration: 30.0)
+			triggerAlarm(fadeDuration: 60.0)
 		} else if enableMorningFadeIn {
 			var todayAlarm = cal.date(bySettingHour: alHr, minute: alMin, second: 0, of: now)!
 			if todayAlarm < now {
@@ -507,11 +508,11 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
-	func triggerAlarm(fadeDuration: Double = 30.0) {
+	func triggerAlarm(fadeDuration: Double = 60.0) {
 		isAlarmOn = false
+		isAlarmRinging = true
 		do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
 		
-		// Safely prep the alarm track to start at 0, then natively fade it up over X seconds
 		alarmPlayer?.setVolume(0.0, fadeDuration: 0)
 		alarmPlayer?.play()
 		alarmPlayer?.setVolume(1.0, fadeDuration: fadeDuration)
@@ -541,6 +542,17 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
+	func stopAlarm() {
+		alarmPlayer?.stop()
+		alarmPlayer?.currentTime = 0
+		isAlarmRinging = false
+		fadeTimer?.invalidate()
+		
+		if isPlaying {
+			playStop()
+		}
+	}
+	
 	// MARK: - Simulation Controls
 	
 	func simulateNightFadeOut() {
@@ -549,7 +561,8 @@ class AudioEngineManager: ObservableObject {
 		dynamicVolumeMultiplier = 1.0
 		
 		var fadeStep = 0
-		let totalSteps = 100 // 10 seconds simulation
+		let fadeDurationSeconds = sleepFadeMinutes * 60.0
+		let totalSteps = Int(fadeDurationSeconds * 10)
 		
 		fadeTimer?.invalidate()
 		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
@@ -570,11 +583,12 @@ class AudioEngineManager: ObservableObject {
 		simulationTask?.cancel()
 		if isPlaying { playStop() }
 		dynamicVolumeMultiplier = 0.0
-		isMorningFadeActive = true // Force to skip full volume init
+		isMorningFadeActive = true
 		playStop() // Start the engine quietly
 		
 		var fadeStep = 0
-		let totalSteps = 100 // 10 seconds simulation
+		let fadeDurationSeconds = morningFadeInMinutes * 60.0
+		let totalSteps = Int(fadeDurationSeconds * 10)
 		
 		fadeTimer?.invalidate()
 		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
@@ -597,10 +611,11 @@ class AudioEngineManager: ObservableObject {
 		isMorningFadeActive = false
 		
 		let task = DispatchWorkItem { [weak self] in
-			self?.triggerAlarm(fadeDuration: 30.0)
+			self?.triggerAlarm(fadeDuration: 60.0)
 		}
 		simulationTask = task
-		DispatchQueue.main.asyncAfter(deadline: .now() + 30.0, execute: task)
+		// Wait 5 seconds so they can confirm volume, then start the 60s crossfade
+		DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: task)
 	}
 	
 	// MARK: - App Logic Functions
@@ -942,7 +957,7 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	private func generateSeamlessNoise(length: Int, lpfFreq: Double? = nil, isBrown: Bool = false) -> [Float] {
-		let crossfadeLength = Int(sampleRate * 1.0)
+		let crossfadeLength = Int(sampleRate * 2.0)
 		let totalLength = length + crossfadeLength
 		var noise = [Float](repeating: 0, count: totalLength)
 		var maxVal: Float = 0
@@ -964,7 +979,7 @@ class AudioEngineManager: ObservableObject {
 		
 		for i in 0..<totalLength {
 			let white = gaussianRandom()
-			lastBrown = 0.995 * lastBrown + 0.025 * white
+			lastBrown = 0.995 * lastBrown + 0.05 * white
 			
 			if isBrown {
 				noise[i] = lastBrown
@@ -977,9 +992,12 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 		
+		// Trigonometric Equal-Power Crossfade to prevent 3dB dips in uncorrelated noise
 		for i in 0..<crossfadeLength {
 			let ratio = Float(i) / Float(crossfadeLength)
-			noise[i] = noise[length + i] * (1.0 - ratio) + noise[i] * ratio
+			let fadeOut = cos(ratio * Float.pi / 2.0)
+			let fadeIn = sin(ratio * Float.pi / 2.0)
+			noise[i] = (noise[length + i] * fadeOut) + (noise[i] * fadeIn)
 		}
 		
 		var finalNoise = Array(noise[0..<length])
@@ -1086,7 +1104,8 @@ class AudioEngineManager: ObservableObject {
 		self.lubEnv = localLubEnv
 		self.dubEnv = localDubEnv
 		
-		nNoise = Int(sampleRate * 5)
+		// Expanded noise buffer to 30 seconds to prevent repetitive artifacts
+		nNoise = Int(sampleRate * 30.0)
 		if brownL.isEmpty {
 			brownL = generateSeamlessNoise(length: nNoise, isBrown: true)
 			brownR = generateSeamlessNoise(length: nNoise, isBrown: true)
@@ -1142,7 +1161,6 @@ class AudioEngineManager: ObservableObject {
 				
 				engine.prepare()
 				
-				// Force volume update so we don't burst loud if it's a silent start
 				updateVolumes()
 				
 				try engine.start()
@@ -1491,13 +1509,13 @@ struct AlarmView: View {
 				}
 				
 				Section(header: Text("Simulation & Testing")) {
-					Button("Simulate Night Fade-Out (10s)") {
+					Button("Simulate Night Fade-Out (Real Time)") {
 						engine.simulateNightFadeOut()
 					}
-					Button("Simulate Morning Fade-In (10s)") {
+					Button("Simulate Morning Fade-In (Real Time)") {
 						engine.simulateMorningFadeIn()
 					}
-					Button("Simulate Alarm Fading (30s wait, 30s crossfade)") {
+					Button("Simulate Alarm Fading (5s wait, 60s fade)") {
 						engine.simulateAlarmFading()
 					}
 				}
@@ -1544,10 +1562,16 @@ struct ContentView: View {
 					.accessibilityLabel("Master Output Volume")
 					.padding(.horizontal).padding(.top, 10)
 				
-				Button(action: { engine.playStop() }) {
-					Text(engine.isPlaying ? "Stop All Audio" : "Play Master")
+				Button(action: {
+					if engine.isAlarmRinging {
+						engine.stopAlarm()
+					} else {
+						engine.playStop()
+					}
+				}) {
+					Text(engine.isAlarmRinging ? "Stop Alarm" : (engine.isPlaying ? "Stop All Audio" : "Play Master"))
 						.frame(maxWidth: .infinity).padding()
-						.background(engine.isPlaying ? Color.red.opacity(0.2) : Color.blue.opacity(0.2))
+						.background(engine.isAlarmRinging ? Color.orange.opacity(0.2) : (engine.isPlaying ? Color.red.opacity(0.2) : Color.blue.opacity(0.2)))
 						.cornerRadius(10)
 				}
 				.padding(.horizontal).padding(.bottom, 10)
