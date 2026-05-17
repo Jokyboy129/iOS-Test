@@ -337,6 +337,46 @@ class AudioEngineManager: ObservableObject {
 		return Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
 	}
 	
+	private func generatePingPongWavData(buffer: [Float], sampleRate: Double, duration: Double) -> URL? {
+		if buffer.isEmpty || duration <= 0 { return nil }
+		let frameCount = Int(duration * sampleRate)
+		
+		let tempDir = FileManager.default.temporaryDirectory
+		let fileURL = tempDir.appendingPathComponent(UUID().uuidString + ".wav")
+		
+		do {
+			let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+			let file = try AVAudioFile(forWriting: fileURL, settings: format.settings)
+			guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount)) else { return nil }
+			pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
+			
+			guard let channelData = pcmBuffer.floatChannelData?[0] else { return nil }
+			
+			// 300ms smooth fade to prevent cuts and clicks between exercise phases
+			let fadeFrames = Int(sampleRate * 0.3)
+			
+			for i in 0..<frameCount {
+				let idx = getPingPongIndex(index: i, count: buffer.count)
+				var env: Float = 1.0
+				
+				if i < fadeFrames {
+					env = Float(i) / Float(fadeFrames)
+				} else if i > frameCount - fadeFrames {
+					env = Float(frameCount - i) / Float(fadeFrames)
+				}
+				
+				// Apply smooth quadratic easing to the envelope
+				let easedEnv = env * env * (3 - 2 * env)
+				channelData[i] = buffer[idx] * easedEnv
+			}
+			
+			try file.write(from: pcmBuffer)
+			return fileURL
+		} catch {
+			return nil
+		}
+	}
+	
 	private func getPingPongIndex(index: Int, count: Int) -> Int {
 		if count <= 0 { return 0 }
 		let safeIndex = abs(index)
@@ -774,13 +814,38 @@ class AudioEngineManager: ObservableObject {
 	
 	// MARK: - App Logic Functions
 	
-	func playVoiceCue(_ type: String, isAnchor: Bool = false) {
-		let filename = "\(type)\(useWhisper ? "_WHISPER" : "")"
+	func playBreathingCue(type: String, duration: Double = 0.0, isAnchor: Bool = false) {
+		if useRealBreathing && type == "HOLD" && !isAnchor {
+			breathingPlayer?.stop()
+			return
+		}
+
+		let isBreathAction = (type == "INHALE" || type == "EXHALE")
+		
+		if useRealBreathing && isBreathAction && duration > 0 {
+			let buffer = type == "INHALE" ? realInhaleBuffer : realExhaleBuffer
+			if let wavURL = generatePingPongWavData(buffer: buffer, sampleRate: sampleRate, duration: duration) {
+				do {
+					let player = try AVAudioPlayer(contentsOf: wavURL)
+					player.volume = Float(masterVolume * dynamicVolumeMultiplier)
+					player.pan = getPanPos(mode: panBreathIndex, time: 0)
+					breathingPlayer?.stop()
+					player.play()
+					breathingPlayer = player
+				} catch { print("WAV Gen Error: \(error)") }
+				return
+			}
+		}
+
+		var filename = "\(type)\(useWhisper ? "_WHISPER" : "")"
+		if useRealBreathing && isBreathAction { filename = "REAL_\(type)" }
+
 		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else { return }
 		do {
 			let player = try AVAudioPlayer(contentsOf: url)
 			player.volume = Float(masterVolume * dynamicVolumeMultiplier)
 			player.pan = isAnchor ? Float.random(in: -0.8...0.8) : getPanPos(mode: panBreathIndex, time: 0)
+			if useRealBreathing && isBreathAction { player.numberOfLoops = -1 }
 			breathingPlayer?.stop()
 			player.play()
 			breathingPlayer = player
@@ -802,7 +867,7 @@ class AudioEngineManager: ObservableObject {
 				await MainActor.run { 
 					currentBreathingPhase = "Inhale (\(inhale)s)"
 					manualBreathState = 1
-					if !useRealBreathing { playVoiceCue("INHALE") }
+					playBreathingCue(type: "INHALE", duration: Double(inhale))
 				}
 				try? await Task.sleep(nanoseconds: UInt64(inhale) * 1_000_000_000)
 				if Task.isCancelled { break }
@@ -811,12 +876,10 @@ class AudioEngineManager: ObservableObject {
 					await MainActor.run {
 						currentBreathingPhase = "Hold (\(hold1)s)"
 						manualBreathState = 3
-						if !useRealBreathing {
-							if enableEnhancedAnchors && Bool.random() {
-								playVoiceCue(anchors.randomElement()!, isAnchor: true)
-							} else {
-								playVoiceCue("HOLD")
-							}
+						if enableEnhancedAnchors && Bool.random() && !useRealBreathing {
+							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
+						} else {
+							playBreathingCue(type: "HOLD")
 						}
 					}
 					try? await Task.sleep(nanoseconds: UInt64(hold1) * 1_000_000_000)
@@ -826,7 +889,7 @@ class AudioEngineManager: ObservableObject {
 				await MainActor.run { 
 					currentBreathingPhase = "Exhale (\(exhale)s)"
 					manualBreathState = 2
-					if !useRealBreathing { playVoiceCue("EXHALE") }
+					playBreathingCue(type: "EXHALE", duration: Double(exhale))
 				}
 				try? await Task.sleep(nanoseconds: UInt64(exhale) * 1_000_000_000)
 				if Task.isCancelled { break }
@@ -835,12 +898,10 @@ class AudioEngineManager: ObservableObject {
 					await MainActor.run {
 						currentBreathingPhase = "Hold (\(hold2)s)"
 						manualBreathState = 3
-						if !useRealBreathing {
-							if enableEnhancedAnchors && Bool.random() {
-								playVoiceCue(anchors.randomElement()!, isAnchor: true)
-							} else {
-								playVoiceCue("HOLD")
-							}
+						if enableEnhancedAnchors && Bool.random() && !useRealBreathing {
+							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
+						} else {
+							playBreathingCue(type: "HOLD")
 						}
 					}
 					try? await Task.sleep(nanoseconds: UInt64(hold2) * 1_000_000_000)
@@ -961,16 +1022,16 @@ class AudioEngineManager: ObservableObject {
 								if phaseBeat == 0 {
 									DispatchQueue.main.async {
 										self.currentBreathingPhase = "Inhale (Sync)"
-										if !state.useRealBreathing { self.playVoiceCue("INHALE") }
+										if !state.useRealBreathing { self.playBreathingCue(type: "INHALE") }
 									}
 								} else if phaseBeat == 4 {
 									DispatchQueue.main.async {
 										self.currentBreathingPhase = "Exhale (Sync)"
-										if !state.useRealBreathing { self.playVoiceCue("EXHALE") }
+										if !state.useRealBreathing { self.playBreathingCue(type: "EXHALE") }
 									}
 								} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
 									let anchor = self.anchors.randomElement()!
-									DispatchQueue.main.async { self.playVoiceCue(anchor, isAnchor: true) }
+									DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
 								}
 							}
 						}
@@ -1054,16 +1115,16 @@ class AudioEngineManager: ObservableObject {
 								if phaseBeat == 0 {
 									DispatchQueue.main.async {
 										self.currentBreathingPhase = "Inhale (Sync)"
-										if !state.useRealBreathing { self.playVoiceCue("INHALE") }
+										if !state.useRealBreathing { self.playBreathingCue(type: "INHALE") }
 									}
 								} else if phaseBeat == 4 {
 									DispatchQueue.main.async {
 										self.currentBreathingPhase = "Exhale (Sync)"
-										if !state.useRealBreathing { self.playVoiceCue("EXHALE") }
+										if !state.useRealBreathing { self.playBreathingCue(type: "EXHALE") }
 									}
 								} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
 									let anchor = self.anchors.randomElement()!
-									DispatchQueue.main.async { self.playVoiceCue(anchor, isAnchor: true) }
+									DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
 								}
 							}
 						}
@@ -1122,31 +1183,14 @@ class AudioEngineManager: ObservableObject {
 				var chunkBrL: Float = 0
 				var chunkBrR: Float = 0
 				
-				if vBreath > 0 || state.isBreathing {
+				// ONLY render background breathing if manual exercises are NOT active to avoid overlap
+				if vBreath > 0 && !state.isBreathing {
 					var breathEnv: Float = 0
 					var sampleIdxForRealBreath = 0
 					var usingInhale = false
 					var usingExhale = false
 					
-					if state.isBreathing {
-						if state.manualBreathState != self.lastManualState {
-							self.breathFrameCounter = 0
-							self.lastManualState = state.manualBreathState
-						}
-						self.breathFrameCounter += 1
-						sampleIdxForRealBreath = self.breathFrameCounter
-						
-						if state.manualBreathState == 1 {
-							usingInhale = true
-							breathEnv = 1.0
-						} else if state.manualBreathState == 2 {
-							usingExhale = true
-							breathEnv = 1.0
-						}
-					} else if state.syncBreathing {
-						self.lastManualState = 0
-						self.breathFrameCounter = 0
-						
+					if state.syncBreathing {
 						let syncPhase: Double
 						if state.enableSlowdown {
 							syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration)
@@ -1167,9 +1211,6 @@ class AudioEngineManager: ObservableObject {
 							sampleIdxForRealBreath = Int(((syncPhase - 4.0) / 4.0) * (4.0 * beatDuration * self.sampleRate))
 						}
 					} else {
-						self.lastManualState = 0
-						self.breathFrameCounter = 0
-						
 						let breathDuration = 6.0
 						let breathPhase = fmod(timeInSeconds, breathDuration) / breathDuration
 						
@@ -1204,9 +1245,8 @@ class AudioEngineManager: ObservableObject {
 						breathSampleR = breathR[idxNoise]
 					}
 					
-					let activeBreathVol = state.isBreathing ? Float(max(vBreath, 0.5)) : vBreath
 					let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
-					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: activeBreathVol * 0.6)
+					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * 0.6)
 					
 					chunkBrL = pannedBr.0
 					chunkBrR = pannedBr.1
