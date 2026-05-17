@@ -68,12 +68,6 @@ class AudioEngineManager: ObservableObject {
 	var breathingPlayer: AVAudioPlayer?
 	var silentLoopPlayer: AVAudioPlayer?
 	
-	// Real Breathing Time-Stretching Nodes
-	var realInhaleBuffer: AVAudioPCMBuffer?
-	var realExhaleBuffer: AVAudioPCMBuffer?
-	let realBreathPlayer = AVAudioPlayerNode()
-	let breathTimePitch = AVAudioUnitTimePitch()
-	
 	var hapticEngine: CHHapticEngine?
 	
 	@Published var isPlaying = false
@@ -126,18 +120,11 @@ class AudioEngineManager: ObservableObject {
 	@AppStorage("syncClock") var syncClock = false
 	
 	@AppStorage("mixWithOthers") var mixWithOthers = false { didSet { applyAudioSessionSettings() } }
+	@AppStorage("useWhisper") var useWhisper = false
 	
 	// Intimacy & Immersion Toggles
 	@AppStorage("enableHaptics") var enableHaptics = false
 	@AppStorage("enableEnhancedAnchors") var enableEnhancedAnchors = false
-	
-	// Real Breathing Audio Toggles
-	@AppStorage("enableRealBreathingAudio") var enableRealBreathingAudio = true
-	@AppStorage("realBreathingVolume") var realBreathingVolume: Double = 0.8 { didSet { updateVolumes() } }
-	
-	// Vocal Preferences
-	@AppStorage("enableVocalCues") var enableVocalCues = true
-	@AppStorage("useWhisper") var useWhisper = false
 	
 	// Real-Time Slowdown Properties
 	@AppStorage("enableSlowdown") var enableSlowdown = false
@@ -211,7 +198,6 @@ class AudioEngineManager: ObservableObject {
 		alarmTime = Date(timeIntervalSince1970: alarmTimeRef)
 		generateSilentWavIfNeeded()
 		applyAudioSessionSettings()
-		setupRealBreathingNodes()
 		setupOrganicPlayers()
 		loadTracks()
 		loadAlarmTrack()
@@ -223,33 +209,6 @@ class AudioEngineManager: ObservableObject {
 		updateVolumes()
 		startTimersMonitor()
 		toggleSilentBackgroundLoop()
-	}
-	
-	private func setupRealBreathingNodes() {
-		engine.attach(realBreathPlayer)
-		engine.attach(breathTimePitch)
-		
-		let defaultFormat = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
-		
-		if let urlIn = Bundle.main.url(forResource: "REAL_INHALE", withExtension: "wav"),
-		   let fileIn = try? AVAudioFile(forReading: urlIn),
-		   let urlEx = Bundle.main.url(forResource: "REAL_EXHALE", withExtension: "wav"),
-		   let fileEx = try? AVAudioFile(forReading: urlEx) {
-			
-			realInhaleBuffer = AVAudioPCMBuffer(pcmFormat: fileIn.processingFormat, frameCapacity: AVAudioFrameCount(fileIn.length))
-			try? fileIn.read(into: realInhaleBuffer!)
-			
-			realExhaleBuffer = AVAudioPCMBuffer(pcmFormat: fileEx.processingFormat, frameCapacity: AVAudioFrameCount(fileEx.length))
-			try? fileEx.read(into: realExhaleBuffer!)
-			
-			let format = fileIn.processingFormat
-			engine.connect(realBreathPlayer, to: breathTimePitch, format: format)
-			engine.connect(breathTimePitch, to: engine.mainMixerNode, format: format)
-		} else {
-			print("Could not locate REAL_INHALE.wav or REAL_EXHALE.wav in the app bundle.")
-			engine.connect(realBreathPlayer, to: breathTimePitch, format: defaultFormat)
-			engine.connect(breathTimePitch, to: engine.mainMixerNode, format: defaultFormat)
-		}
 	}
 	
 	private func setupCoreHaptics() {
@@ -300,10 +259,8 @@ class AudioEngineManager: ObservableObject {
 	private func updateVolumes() {
 		let actualMaster = Float(masterVolume * dynamicVolumeMultiplier)
 		engine.mainMixerNode.outputVolume = actualMaster
-		rainPlayer?.volume = Float(rainVolume * actualMaster)
-		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * actualMaster)
-		realBreathPlayer.volume = Float(realBreathingVolume * actualMaster)
-		
+		rainPlayer?.volume = Float(rainVolume * masterVolume * dynamicVolumeMultiplier)
+		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume * dynamicVolumeMultiplier)
 		for track in importedTracks {
 			track.masterVolume = masterVolume
 			track.dynamicVolumeMultiplier = dynamicVolumeMultiplier
@@ -705,8 +662,6 @@ class AudioEngineManager: ObservableObject {
 	// MARK: - App Logic Functions
 	
 	func playBreathingCue(type: String, isAnchor: Bool = false) {
-		if !isAnchor && !enableVocalCues { return }
-		
 		let suffix = useWhisper ? "_WHISPER" : ""
 		let filename = "\(type)\(suffix)"
 		
@@ -724,22 +679,6 @@ class AudioEngineManager: ObservableObject {
 		} catch {}
 	}
 	
-	func playRealBreathing(isInhale: Bool, duration: Double) {
-		guard enableRealBreathingAudio, let buffer = isInhale ? realInhaleBuffer : realExhaleBuffer else { return }
-		
-		let originalDuration = Double(buffer.frameLength) / buffer.format.sampleRate
-		let targetRate = max(1.0 / 32.0, min(32.0, originalDuration / duration))
-		
-		breathTimePitch.rate = Float(targetRate)
-		realBreathPlayer.stop()
-		realBreathPlayer.volume = Float(masterVolume * dynamicVolumeMultiplier * realBreathingVolume)
-		realBreathPlayer.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
-		
-		if engine.isRunning {
-			realBreathPlayer.play()
-		}
-	}
-	
 	func startBreathingExercise(inhale: Int, hold1: Int, exhale: Int, hold2: Int) {
 		breathingTask?.cancel()
 		isBreathing = true
@@ -750,11 +689,7 @@ class AudioEngineManager: ObservableObject {
 		
 		breathingTask = Task {
 			while !Task.isCancelled {
-				await MainActor.run { 
-					currentBreathingPhase = "Inhale (\(inhale)s)"
-					playBreathingCue(type: "INHALE") 
-					playRealBreathing(isInhale: true, duration: Double(inhale))
-				}
+				await MainActor.run { currentBreathingPhase = "Inhale (\(inhale)s)"; playBreathingCue(type: "INHALE") }
 				try? await Task.sleep(nanoseconds: UInt64(inhale) * 1_000_000_000)
 				if Task.isCancelled { break }
 				
@@ -771,11 +706,7 @@ class AudioEngineManager: ObservableObject {
 					if Task.isCancelled { break }
 				}
 				
-				await MainActor.run { 
-					currentBreathingPhase = "Exhale (\(exhale)s)"
-					playBreathingCue(type: "EXHALE") 
-					playRealBreathing(isInhale: false, duration: Double(exhale))
-				}
+				await MainActor.run { currentBreathingPhase = "Exhale (\(exhale)s)"; playBreathingCue(type: "EXHALE") }
 				try? await Task.sleep(nanoseconds: UInt64(exhale) * 1_000_000_000)
 				if Task.isCancelled { break }
 				
@@ -802,7 +733,6 @@ class AudioEngineManager: ObservableObject {
 		breathingTask?.cancel()
 		isBreathing = false
 		currentBreathingPhase = "Ready"
-		realBreathPlayer.stop()
 		if backgroundTaskID != .invalid {
 			UIApplication.shared.endBackgroundTask(backgroundTaskID)
 			backgroundTaskID = .invalid
@@ -885,22 +815,8 @@ class AudioEngineManager: ObservableObject {
 						
 						if self.syncBreathing {
 							let phaseBeat = self.beatCounter % 8
-							let captureBeatDur = beatDuration
-							
-							if phaseBeat == 0 { 
-								DispatchQueue.main.async { 
-									self.currentBreathingPhase = "Inhale (Sync)"
-									self.playBreathingCue(type: "INHALE")
-									self.playRealBreathing(isInhale: true, duration: 4.0 * captureBeatDur)
-								} 
-							}
-							else if phaseBeat == 4 { 
-								DispatchQueue.main.async { 
-									self.currentBreathingPhase = "Exhale (Sync)"
-									self.playBreathingCue(type: "EXHALE")
-									self.playRealBreathing(isInhale: false, duration: 4.0 * captureBeatDur)
-								} 
-							}
+							if phaseBeat == 0 { DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; self.playBreathingCue(type: "INHALE") } }
+							else if phaseBeat == 4 { DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; self.playBreathingCue(type: "EXHALE") } }
 							else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
 								let anchor = self.anchors.randomElement()!
 								DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
@@ -983,22 +899,8 @@ class AudioEngineManager: ObservableObject {
 						
 						if self.syncBreathing {
 							let phaseBeat = self.beatCounter % 8
-							let captureBeatDur = beatDuration
-							
-							if phaseBeat == 0 { 
-								DispatchQueue.main.async { 
-									self.currentBreathingPhase = "Inhale (Sync)"
-									self.playBreathingCue(type: "INHALE")
-									self.playRealBreathing(isInhale: true, duration: 4.0 * captureBeatDur)
-								} 
-							}
-							else if phaseBeat == 4 { 
-								DispatchQueue.main.async { 
-									self.currentBreathingPhase = "Exhale (Sync)"
-									self.playBreathingCue(type: "EXHALE")
-									self.playRealBreathing(isInhale: false, duration: 4.0 * captureBeatDur)
-								} 
-							}
+							if phaseBeat == 0 { DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; self.playBreathingCue(type: "INHALE") } }
+							else if phaseBeat == 4 { DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; self.playBreathingCue(type: "EXHALE") } }
 							else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
 								let anchor = self.anchors.randomElement()!
 								DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
@@ -1603,54 +1505,36 @@ struct GeneratorView: View {
 struct BreathingView: View {
 	@ObservedObject var engine: AudioEngineManager
 	var body: some View {
-		NavigationView {
-			Form {
-				Section(header: Text("Status")) {
-					Text(engine.currentBreathingPhase)
-						.font(.title2).bold()
-						.frame(maxWidth: .infinity, alignment: .center)
-						.padding(.vertical, 10)
-						.accessibilityLabel("Current Phase: \(engine.currentBreathingPhase)")
+		VStack(spacing: 30) {
+			Text(engine.currentBreathingPhase)
+				.font(.largeTitle).bold()
+				.accessibilityLabel("Current Phase: \(engine.currentBreathingPhase)")
+			
+			Toggle("Sync Cues to Heartbeat Rhythm", isOn: $engine.syncBreathing)
+				.padding(.horizontal, 40)
+				.onChange(of: engine.syncBreathing) { synced in
+					if synced && engine.isBreathing { engine.stopBreathingExercise() }
+				}
+			
+			if !engine.syncBreathing {
+				HStack(spacing: 20) {
+					Button("4-7-8 Relax") { engine.startBreathingExercise(inhale: 4, hold1: 7, exhale: 8, hold2: 0) }
+						.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
+					Button("Box Breathing") { engine.startBreathingExercise(inhale: 4, hold1: 4, exhale: 4, hold2: 4) }
+						.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
 				}
 				
-				Section(header: Text("Audio Profiles")) {
-					Toggle("Use Real Breathing Recordings", isOn: $engine.enableRealBreathingAudio)
-					if engine.enableRealBreathingAudio {
-						VStack(alignment: .leading) {
-							Text("Real Breathing Volume").accessibilityHidden(true)
-							Slider(value: $engine.realBreathingVolume, in: 0...1).accessibilityLabel("Real Breathing Volume")
-						}
-					}
+				if engine.isBreathing {
+					Button("Stop Exercise") { engine.stopBreathingExercise() }
+						.foregroundColor(.red).padding(.top, 20)
 				}
-				
-				Section(header: Text("Exercises")) {
-					Toggle("Sync Cues to Heartbeat Rhythm", isOn: $engine.syncBreathing)
-						.onChange(of: engine.syncBreathing) { synced in
-							if synced && engine.isBreathing { engine.stopBreathingExercise() }
-						}
-					
-					if !engine.syncBreathing {
-						Button("4-7-8 Relax") { engine.startBreathingExercise(inhale: 4, hold1: 7, exhale: 8, hold2: 0) }
-							.disabled(engine.isBreathing)
-						Button("Box Breathing") { engine.startBreathingExercise(inhale: 4, hold1: 4, exhale: 4, hold2: 4) }
-							.disabled(engine.isBreathing)
-						
-						if engine.isBreathing {
-							Button(action: { engine.stopBreathingExercise() }) {
-								Text("Stop Exercise")
-									.foregroundColor(.red)
-									.frame(maxWidth: .infinity, alignment: .center)
-							}
-						}
-					} else {
-						Text("Manual exercises are disabled because breathing is actively bound to the heartbeat BPM.")
-							.font(.footnote)
-							.foregroundColor(.secondary)
-					}
-				}
+			} else {
+				Text("Manual exercises are disabled because breathing is actively bound to the heartbeat BPM.")
+					.font(.footnote)
+					.foregroundColor(.secondary)
+					.multilineTextAlignment(.center)
+					.padding(.horizontal, 40)
 			}
-			.navigationTitle("Breathing")
-			.navigationBarTitleDisplayMode(.inline)
 		}
 	}
 }
@@ -1745,15 +1629,12 @@ struct SettingsView: View {
 					.accessibilityHint("Spawns random spatial whispers like 'relax' and 'drifting' around your head during breathing holds.")
 			}
 			
-			Section(header: Text("Voice Preferences")) {
-				Toggle("Play Vocal Cues (Inhale/Exhale)", isOn: $engine.enableVocalCues)
-					.accessibilityHint("Plays the spoken guide words. Turn off to only hear your real breathing audio.")
-				Toggle("Use Whispered Breathing Cues", isOn: $engine.useWhisper)
-			}
-			
 			Section(header: Text("Audio Behavior")) {
 				Toggle("Mix with other apps", isOn: $engine.mixWithOthers)
 					.accessibilityHint("Allows Sleep Engine to play while watching YouTube or listening to podcasts.")
+			}
+			Section(header: Text("Voice Preferences")) {
+				Toggle("Use Whispered Breathing Cues", isOn: $engine.useWhisper)
 			}
 		}
 	}
