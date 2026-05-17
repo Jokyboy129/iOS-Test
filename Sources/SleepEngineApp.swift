@@ -150,6 +150,7 @@ class AudioEngineManager: ObservableObject {
 	var alarmPlayer: AVAudioPlayer?
 	var alarmTimer: Timer?
 	var fadeTimer: Timer?
+	private var simulationTask: DispatchWorkItem?
 	
 	// Generator Buffers & State
 	private var lubL = [Float]()
@@ -442,7 +443,7 @@ class AudioEngineManager: ObservableObject {
 		let now = Date()
 		let cal = Calendar.current
 		
-		// 1. Night Fade Out
+		// Night Fade Out
 		if enableSleepTimer, let start = sleepTimerStartDate, isPlaying, !isMorningFadeActive {
 			let elapsed = now.timeIntervalSince(start)
 			let playTime = sleepTimerHours * 3600.0
@@ -460,7 +461,7 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 		
-		// 2. Morning Fade In & Alarm Trigger
+		// Morning Fade In & Alarm Trigger
 		guard isAlarmOn else {
 			isMorningFadeActive = false
 			return
@@ -475,7 +476,7 @@ class AudioEngineManager: ObservableObject {
 		
 		if nowHr == alHr && nowMin == alMin && nowSec == 0 {
 			isMorningFadeActive = false
-			triggerAlarm()
+			triggerAlarm(fadeDuration: 30.0)
 		} else if enableMorningFadeIn {
 			var todayAlarm = cal.date(bySettingHour: alHr, minute: alMin, second: 0, of: now)!
 			if todayAlarm < now {
@@ -506,24 +507,25 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
-	private func triggerAlarm() {
+	func triggerAlarm(fadeDuration: Double = 30.0) {
 		isAlarmOn = false
 		do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
 		
-		alarmPlayer?.volume = 0
+		// Safely prep the alarm track to start at 0, then natively fade it up over X seconds
+		alarmPlayer?.setVolume(0.0, fadeDuration: 0)
 		alarmPlayer?.play()
+		alarmPlayer?.setVolume(1.0, fadeDuration: fadeDuration)
 		
 		isMorningFadeActive = false
 		
 		var fadeStep = 0
-		let totalSteps = 300
+		let totalSteps = Int(fadeDuration * 10)
 		
 		fadeTimer?.invalidate()
 		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
 			guard let self = self else { return }
 			fadeStep += 1
 			let progress = Double(fadeStep) / Double(totalSteps)
-			self.alarmPlayer?.volume = Float(progress * 1.0)
 			
 			if self.isPlaying {
 				self.dynamicVolumeMultiplier = 1.0 - progress
@@ -538,6 +540,70 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 	}
+	
+	// MARK: - Simulation Controls
+	
+	func simulateNightFadeOut() {
+		simulationTask?.cancel()
+		if !isPlaying { playStop() }
+		dynamicVolumeMultiplier = 1.0
+		
+		var fadeStep = 0
+		let totalSteps = 100 // 10 seconds simulation
+		
+		fadeTimer?.invalidate()
+		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+			guard let self = self else { return }
+			fadeStep += 1
+			let progress = Double(fadeStep) / Double(totalSteps)
+			self.dynamicVolumeMultiplier = 1.0 - progress
+			
+			if fadeStep >= totalSteps {
+				timer.invalidate()
+				if self.isPlaying { self.playStop() }
+				self.dynamicVolumeMultiplier = 1.0
+			}
+		}
+	}
+	
+	func simulateMorningFadeIn() {
+		simulationTask?.cancel()
+		if isPlaying { playStop() }
+		dynamicVolumeMultiplier = 0.0
+		isMorningFadeActive = true // Force to skip full volume init
+		playStop() // Start the engine quietly
+		
+		var fadeStep = 0
+		let totalSteps = 100 // 10 seconds simulation
+		
+		fadeTimer?.invalidate()
+		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+			guard let self = self else { return }
+			fadeStep += 1
+			let progress = Double(fadeStep) / Double(totalSteps)
+			self.dynamicVolumeMultiplier = progress
+			
+			if fadeStep >= totalSteps {
+				timer.invalidate()
+				self.isMorningFadeActive = false
+			}
+		}
+	}
+	
+	func simulateAlarmFading() {
+		simulationTask?.cancel()
+		if !isPlaying { playStop() }
+		dynamicVolumeMultiplier = 1.0
+		isMorningFadeActive = false
+		
+		let task = DispatchWorkItem { [weak self] in
+			self?.triggerAlarm(fadeDuration: 30.0)
+		}
+		simulationTask = task
+		DispatchQueue.main.asyncAfter(deadline: .now() + 30.0, execute: task)
+	}
+	
+	// MARK: - App Logic Functions
 	
 	func playBreathingCue(type: String) {
 		let suffix = useWhisper ? "_WHISPER" : ""
@@ -1075,6 +1141,10 @@ class AudioEngineManager: ObservableObject {
 				resetDynamicBPM()
 				
 				engine.prepare()
+				
+				// Force volume update so we don't burst loud if it's a silent start
+				updateVolumes()
+				
 				try engine.start()
 				
 				if !isMorningFadeActive {
@@ -1259,7 +1329,9 @@ struct GeneratorView: View {
 		Form {
 			Section(header: Text("Base Speed & Tone Profile").accessibilityHidden(true)) {
 				Picker("Tone Profile", selection: $engine.selectedProfileIndex) {
-					ForEach(0..<engine.profiles.count, id: \.self) { Text(engine.profiles[$0].name) }
+					ForEach(0..<engine.profiles.count, id: \.self) { index in
+						Text(engine.profiles[index].name).tag(index)
+					}
 				}
 				.pickerStyle(MenuPickerStyle())
 			}
@@ -1284,7 +1356,9 @@ struct GeneratorView: View {
 			
 			Section(header: Text("Heartbeat Anatomy Spatial Placement").accessibilityHidden(true)) {
 				Picker("Placement", selection: $engine.placementIndex) {
-					ForEach(0..<engine.placementOptions.count, id: \.self) { Text(engine.placementOptions[$0]) }
+					ForEach(0..<engine.placementOptions.count, id: \.self) { index in
+						Text(engine.placementOptions[index]).tag(index)
+					}
 				}
 				.pickerStyle(SegmentedPickerStyle())
 				.accessibilityLabel("Heartbeat Anatomy Spatial Placement")
@@ -1295,16 +1369,23 @@ struct GeneratorView: View {
 					Text("Synth Heartbeat").accessibilityHidden(true)
 					Slider(value: $engine.heartbeatVolume, in: 0...1).accessibilityLabel("Synth Heartbeat Volume")
 					Picker("Heartbeat Pan", selection: $engine.panHeartIndex) {
-						ForEach(0..<engine.panOptions.count, id: \.self) { Text(engine.panOptions[$0]) }
+						ForEach(0..<engine.panOptions.count, id: \.self) { index in
+							Text(engine.panOptions[index]).tag(index)
+						}
 					}
+					.pickerStyle(MenuPickerStyle())
 				}.padding(.vertical, 4)
 				
 				VStack(alignment: .leading) {
 					Text("Clock Ticking").accessibilityHidden(true)
 					Slider(value: $engine.clockVolume, in: 0...1).accessibilityLabel("Clock Volume")
 					Picker("Clock Type", selection: $engine.clockTypeIndex) {
-						ForEach(0..<engine.clockOptions.count, id: \.self) { Text(engine.clockOptions[$0]) }
+						ForEach(0..<engine.clockOptions.count, id: \.self) { index in
+							Text(engine.clockOptions[index]).tag(index)
+						}
 					}
+					.pickerStyle(MenuPickerStyle())
+					
 					Toggle("Sync to Heartbeat", isOn: $engine.syncClock)
 				}.padding(.vertical, 4)
 				
@@ -1406,6 +1487,18 @@ struct AlarmView: View {
 							Button("From Files") { showingFilePicker = true }
 							Button("From Apple Music") { showingMusicPicker = true }
 						}
+					}
+				}
+				
+				Section(header: Text("Simulation & Testing")) {
+					Button("Simulate Night Fade-Out (10s)") {
+						engine.simulateNightFadeOut()
+					}
+					Button("Simulate Morning Fade-In (10s)") {
+						engine.simulateMorningFadeIn()
+					}
+					Button("Simulate Alarm Fading (30s wait, 30s crossfade)") {
+						engine.simulateAlarmFading()
 					}
 				}
 			}
