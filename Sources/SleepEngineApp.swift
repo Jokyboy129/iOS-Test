@@ -60,6 +60,28 @@ class ImportedTrack: Identifiable, ObservableObject {
 	}
 }
 
+struct AudioRenderState {
+	var selectedProfileIndex: Int = 0
+	var placementIndex: Int = 0
+	var heartbeatVolume: Float = 0
+	var clockVolume: Float = 0
+	var brownVolume: Float = 0
+	var breathVolume: Float = 0
+	var panHeartIndex: Int = 0
+	var panClockIndex: Int = 0
+	var panBrownIndex: Int = 0
+	var panBreathIndex: Int = 0
+	var clockTypeIndex: Int = 0
+	var syncClock: Bool = false
+	var enableSlowdown: Bool = false
+	var targetBPM: Double = 40.0
+	var slowdownMinutes: Double = 30.0
+	var syncBreathing: Bool = false
+	var useRealBreathing: Bool = true
+	var isBreathing: Bool = false
+	var manualBreathState: Int = 0
+}
+
 class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
@@ -73,7 +95,6 @@ class AudioEngineManager: ObservableObject {
 	
 	@Published var isPlaying = false
 	@Published var isAlarmRinging = false
-	@Published var isBreathing = false
 	@Published var importedTracks: [ImportedTrack] = []
 	@Published var dynamicVolumeMultiplier: Double = 1.0 {
 		didSet { updateVolumes() }
@@ -99,64 +120,64 @@ class AudioEngineManager: ObservableObject {
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
 	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
 	
-	@AppStorage("selectedProfileIndex") var selectedProfileIndex = 0 { didSet { resetDynamicBPM(); rebuildPrototypes(); updateNowPlaying() } }
-	@AppStorage("placementIndex") var placementIndex = 0 { didSet { rebuildPrototypes() } }
+	// Thread-Safe Render State
+	private var renderState = AudioRenderState()
 	
-	@AppStorage("masterVolume") var masterVolume: Double = 1.0 { didSet { updateVolumes() } }
+	// Published Properties (No AppStorage to prevent threading locks)
+	@Published var selectedProfileIndex: Int { didSet { save("selectedProfileIndex", selectedProfileIndex); resetDynamicBPM(); rebuildPrototypes(); updateNowPlaying(); syncRenderState() } }
+	@Published var placementIndex: Int { didSet { save("placementIndex", placementIndex); rebuildPrototypes(); syncRenderState() } }
+	@Published var masterVolume: Double { didSet { save("masterVolume", masterVolume); updateVolumes() } }
 	
-	@AppStorage("heartbeatVolume") var heartbeatVolume: Double = 0.0
-	@AppStorage("clockVolume") var clockVolume: Double = 0.0
-	@AppStorage("brownVolume") var brownVolume: Double = 0.0
-	@AppStorage("breathVolume") var breathVolume: Double = 0.0
+	@Published var heartbeatVolume: Double { didSet { save("heartbeatVolume", heartbeatVolume); syncRenderState() } }
+	@Published var clockVolume: Double { didSet { save("clockVolume", clockVolume); syncRenderState() } }
+	@Published var brownVolume: Double { didSet { save("brownVolume", brownVolume); syncRenderState() } }
+	@Published var breathVolume: Double { didSet { save("breathVolume", breathVolume); syncRenderState() } }
 	
-	@AppStorage("rainVolume") var rainVolume: Double = 0.0 { didSet { updateVolumes() } }
-	@AppStorage("organicHeartbeatVolume") var organicHeartbeatVolume: Double = 0.0 { didSet { updateVolumes() } }
+	@Published var rainVolume: Double { didSet { save("rainVolume", rainVolume); updateVolumes() } }
+	@Published var organicHeartbeatVolume: Double { didSet { save("organicHeartbeatVolume", organicHeartbeatVolume); updateVolumes() } }
 	
-	@AppStorage("panHeartIndex") var panHeartIndex = 0
-	@AppStorage("panClockIndex") var panClockIndex = 0
-	@AppStorage("panBrownIndex") var panBrownIndex = 0
-	@AppStorage("panBreathIndex") var panBreathIndex = 0
+	@Published var panHeartIndex: Int { didSet { save("panHeartIndex", panHeartIndex); syncRenderState() } }
+	@Published var panClockIndex: Int { didSet { save("panClockIndex", panClockIndex); syncRenderState() } }
+	@Published var panBrownIndex: Int { didSet { save("panBrownIndex", panBrownIndex); syncRenderState() } }
+	@Published var panBreathIndex: Int { didSet { save("panBreathIndex", panBreathIndex); syncRenderState() } }
 	
-	@AppStorage("clockTypeIndex") var clockTypeIndex = 0 { didSet { rebuildPrototypes() } }
-	@AppStorage("syncClock") var syncClock = false
+	@Published var clockTypeIndex: Int { didSet { save("clockTypeIndex", clockTypeIndex); rebuildPrototypes(); syncRenderState() } }
+	@Published var syncClock: Bool { didSet { save("syncClock", syncClock); syncRenderState() } }
 	
-	@AppStorage("mixWithOthers") var mixWithOthers = false { didSet { applyAudioSessionSettings() } }
-	@AppStorage("useWhisper") var useWhisper = false
-	@AppStorage("useRealBreathing") var useRealBreathing = true
+	@Published var mixWithOthers: Bool { didSet { save("mixWithOthers", mixWithOthers); applyAudioSessionSettings() } }
+	@Published var useWhisper: Bool { didSet { save("useWhisper", useWhisper) } }
+	@Published var useRealBreathing: Bool { didSet { save("useRealBreathing", useRealBreathing); syncRenderState() } }
 	
-	// Intimacy & Immersion Toggles
-	@AppStorage("enableHaptics") var enableHaptics = false
-	@AppStorage("enableEnhancedAnchors") var enableEnhancedAnchors = false
+	@Published var enableHaptics: Bool { didSet { save("enableHaptics", enableHaptics) } }
+	@Published var enableEnhancedAnchors: Bool { didSet { save("enableEnhancedAnchors", enableEnhancedAnchors) } }
 	
-	// Real-Time Slowdown Properties
-	@AppStorage("enableSlowdown") var enableSlowdown = false
-	@AppStorage("targetBPM") var targetBPM: Double = 40.0
-	@AppStorage("slowdownMinutes") var slowdownMinutes: Double = 30.0
+	@Published var enableSlowdown: Bool { didSet { save("enableSlowdown", enableSlowdown); syncRenderState() } }
+	@Published var targetBPM: Double { didSet { save("targetBPM", targetBPM); syncRenderState() } }
+	@Published var slowdownMinutes: Double { didSet { save("slowdownMinutes", slowdownMinutes); syncRenderState() } }
 	
-	// Breathing Sync
-	@AppStorage("syncBreathing") var syncBreathing = false
+	@Published var syncBreathing: Bool { didSet { save("syncBreathing", syncBreathing); syncRenderState() } }
+	@Published var isBreathing: Bool = false { didSet { syncRenderState() } }
+	@Published var manualBreathState: Int = 0 { didSet { syncRenderState() } }
 	
-	@AppStorage("savedTracksJSON") var savedTracksJSON: Data = Data()
+	@Published var savedTracksJSON: Data { didSet { save("savedTracksJSON", savedTracksJSON) } }
 	
-	// Sleep Timer & Morning Fade
-	@AppStorage("enableSleepTimer") var enableSleepTimer = false
-	@AppStorage("sleepTimerHours") var sleepTimerHours: Double = 3.0
-	@AppStorage("sleepFadeMinutes") var sleepFadeMinutes: Double = 45.0
+	@Published var enableSleepTimer: Bool { didSet { save("enableSleepTimer", enableSleepTimer) } }
+	@Published var sleepTimerHours: Double { didSet { save("sleepTimerHours", sleepTimerHours) } }
+	@Published var sleepFadeMinutes: Double { didSet { save("sleepFadeMinutes", sleepFadeMinutes) } }
 	
-	@AppStorage("enableMorningFadeIn") var enableMorningFadeIn = false
-	@AppStorage("morningFadeInMinutes") var morningFadeInMinutes: Double = 30.0
+	@Published var enableMorningFadeIn: Bool { didSet { save("enableMorningFadeIn", enableMorningFadeIn) } }
+	@Published var morningFadeInMinutes: Double { didSet { save("morningFadeInMinutes", morningFadeInMinutes) } }
 	
 	var sleepTimerStartDate: Date?
 	var isMorningFadeActive = false
 	
-	// Alarm Properties
-	@AppStorage("alarmTimeRef") var alarmTimeRef: Double = Date().timeIntervalSince1970
-	@Published var alarmTime: Date = Date() { didSet { alarmTimeRef = alarmTime.timeIntervalSince1970 } }
-	@AppStorage("isAlarmOn") var isAlarmOn: Bool = false { didSet { toggleSilentBackgroundLoop() } }
+	@Published var alarmTimeRef: Double { didSet { save("alarmTimeRef", alarmTimeRef) } }
+	@Published var alarmTime: Date { didSet { alarmTimeRef = alarmTime.timeIntervalSince1970 } }
+	@Published var isAlarmOn: Bool { didSet { save("isAlarmOn", isAlarmOn); toggleSilentBackgroundLoop() } }
 	
-	@AppStorage("alarmTrackPath") var alarmTrackPath: String = ""
-	@AppStorage("alarmTrackIsAppleMusic") var alarmTrackIsAppleMusic: Bool = false
-	@AppStorage("alarmTrackNameStorage") var alarmTrackNameStorage: String = "None"
+	@Published var alarmTrackPath: String { didSet { save("alarmTrackPath", alarmTrackPath) } }
+	@Published var alarmTrackIsAppleMusic: Bool { didSet { save("alarmTrackIsAppleMusic", alarmTrackIsAppleMusic) } }
+	@Published var alarmTrackNameStorage: String { didSet { save("alarmTrackNameStorage", alarmTrackNameStorage) } }
 	
 	var alarmPlayer: AVAudioPlayer?
 	var alarmTimer: Timer?
@@ -200,8 +221,6 @@ class AudioEngineManager: ObservableObject {
 	private var smoothedVBrown: Float = 0.0
 	private var smoothedVBreath: Float = 0.0
 	
-	// Manual Breathing State for Node Sync
-	@Published var manualBreathState: Int = 0 // 0: Off, 1: Inhale, 2: Exhale, 3: Hold
 	private var breathFrameCounter: Int = 0
 	private var lastManualState: Int = 0
 	private var lastPhaseBeat: Int = -1
@@ -211,7 +230,55 @@ class AudioEngineManager: ObservableObject {
 	@Published var currentBreathingPhase: String = "Ready"
 	
 	init() {
-		alarmTime = Date(timeIntervalSince1970: alarmTimeRef)
+		// Load from UserDefaults
+		let ud = UserDefaults.standard
+		self.selectedProfileIndex = ud.integer(forKey: "selectedProfileIndex")
+		self.placementIndex = ud.integer(forKey: "placementIndex")
+		self.masterVolume = ud.object(forKey: "masterVolume") == nil ? 1.0 : ud.double(forKey: "masterVolume")
+		
+		self.heartbeatVolume = ud.double(forKey: "heartbeatVolume")
+		self.clockVolume = ud.double(forKey: "clockVolume")
+		self.brownVolume = ud.double(forKey: "brownVolume")
+		self.breathVolume = ud.double(forKey: "breathVolume")
+		self.rainVolume = ud.double(forKey: "rainVolume")
+		self.organicHeartbeatVolume = ud.double(forKey: "organicHeartbeatVolume")
+		
+		self.panHeartIndex = ud.integer(forKey: "panHeartIndex")
+		self.panClockIndex = ud.integer(forKey: "panClockIndex")
+		self.panBrownIndex = ud.integer(forKey: "panBrownIndex")
+		self.panBreathIndex = ud.integer(forKey: "panBreathIndex")
+		
+		self.clockTypeIndex = ud.integer(forKey: "clockTypeIndex")
+		self.syncClock = ud.bool(forKey: "syncClock")
+		self.mixWithOthers = ud.bool(forKey: "mixWithOthers")
+		self.useWhisper = ud.bool(forKey: "useWhisper")
+		self.useRealBreathing = ud.object(forKey: "useRealBreathing") == nil ? true : ud.bool(forKey: "useRealBreathing")
+		
+		self.enableHaptics = ud.bool(forKey: "enableHaptics")
+		self.enableEnhancedAnchors = ud.bool(forKey: "enableEnhancedAnchors")
+		self.enableSlowdown = ud.bool(forKey: "enableSlowdown")
+		self.targetBPM = ud.object(forKey: "targetBPM") == nil ? 40.0 : ud.double(forKey: "targetBPM")
+		self.slowdownMinutes = ud.object(forKey: "slowdownMinutes") == nil ? 30.0 : ud.double(forKey: "slowdownMinutes")
+		
+		self.syncBreathing = ud.bool(forKey: "syncBreathing")
+		self.savedTracksJSON = ud.data(forKey: "savedTracksJSON") ?? Data()
+		
+		self.enableSleepTimer = ud.bool(forKey: "enableSleepTimer")
+		self.sleepTimerHours = ud.object(forKey: "sleepTimerHours") == nil ? 3.0 : ud.double(forKey: "sleepTimerHours")
+		self.sleepFadeMinutes = ud.object(forKey: "sleepFadeMinutes") == nil ? 45.0 : ud.double(forKey: "sleepFadeMinutes")
+		
+		self.enableMorningFadeIn = ud.bool(forKey: "enableMorningFadeIn")
+		self.morningFadeInMinutes = ud.object(forKey: "morningFadeInMinutes") == nil ? 30.0 : ud.double(forKey: "morningFadeInMinutes")
+		
+		self.alarmTimeRef = ud.object(forKey: "alarmTimeRef") == nil ? Date().timeIntervalSince1970 : ud.double(forKey: "alarmTimeRef")
+		self.alarmTime = Date(timeIntervalSince1970: ud.object(forKey: "alarmTimeRef") as? Double ?? Date().timeIntervalSince1970)
+		self.isAlarmOn = ud.bool(forKey: "isAlarmOn")
+		
+		self.alarmTrackPath = ud.string(forKey: "alarmTrackPath") ?? ""
+		self.alarmTrackIsAppleMusic = ud.bool(forKey: "alarmTrackIsAppleMusic")
+		self.alarmTrackNameStorage = ud.string(forKey: "alarmTrackNameStorage") ?? "None"
+		
+		syncRenderState()
 		generateSilentWavIfNeeded()
 		applyAudioSessionSettings()
 		setupOrganicPlayers()
@@ -229,6 +296,34 @@ class AudioEngineManager: ObservableObject {
 		updateVolumes()
 		startTimersMonitor()
 		toggleSilentBackgroundLoop()
+	}
+	
+	private func save(_ key: String, _ value: Any) {
+		UserDefaults.standard.set(value, forKey: key)
+	}
+	
+	private func syncRenderState() {
+		var newState = AudioRenderState()
+		newState.selectedProfileIndex = self.selectedProfileIndex
+		newState.placementIndex = self.placementIndex
+		newState.heartbeatVolume = Float(self.heartbeatVolume)
+		newState.clockVolume = Float(self.clockVolume)
+		newState.brownVolume = Float(self.brownVolume)
+		newState.breathVolume = Float(self.breathVolume)
+		newState.panHeartIndex = self.panHeartIndex
+		newState.panClockIndex = self.panClockIndex
+		newState.panBrownIndex = self.panBrownIndex
+		newState.panBreathIndex = self.panBreathIndex
+		newState.clockTypeIndex = self.clockTypeIndex
+		newState.syncClock = self.syncClock
+		newState.enableSlowdown = self.enableSlowdown
+		newState.targetBPM = self.targetBPM
+		newState.slowdownMinutes = self.slowdownMinutes
+		newState.syncBreathing = self.syncBreathing
+		newState.useRealBreathing = self.useRealBreathing
+		newState.isBreathing = self.isBreathing
+		newState.manualBreathState = self.manualBreathState
+		self.renderState = newState
 	}
 	
 	private func loadWAV(filename: String) -> [Float] {
@@ -706,7 +801,7 @@ class AudioEngineManager: ObservableObject {
 			while !Task.isCancelled {
 				await MainActor.run { 
 					currentBreathingPhase = "Inhale (\(inhale)s)"
-					manualBreathState = 1 // Drives Audio Node Synthesis
+					manualBreathState = 1
 					if !useRealBreathing { playVoiceCue("INHALE") }
 				}
 				try? await Task.sleep(nanoseconds: UInt64(inhale) * 1_000_000_000)
@@ -776,7 +871,7 @@ class AudioEngineManager: ObservableObject {
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
 			guard let self = self else { return noErr }
 			
-			// Freeze Swift array references safely to prevent memory collision
+			// Extract swift arrays safely for audio block execution
 			let lubL = self.lubL
 			let dubL = self.dubL
 			let lubR = self.lubR
@@ -795,33 +890,28 @@ class AudioEngineManager: ObservableObject {
 			let nBeat = self.nBeat
 			let nNoise = self.nNoise
 			
-			// Retain UI/Settings state exactly once per block to prevent blocking UserDefaults I/O
-			let isManualBreathingActive = self.isBreathing
-			let manualState = self.manualBreathState
-			let useRealBreath = self.useRealBreathing
-			let syncBreath = self.syncBreathing
+			// Extract 100% THREAD SAFE Render State variables. This completely prevents UserDefaults crackling.
+			let state = self.renderState
+			let config = self.profiles[state.selectedProfileIndex]
+			let placement = self.placementOptions[state.placementIndex]
 			
 			let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
 			
 			if nNoise == 0 || nBeat == 0 { return noErr }
 			
-			let config = self.profiles[self.selectedProfileIndex]
-			
-			let targetVHeart = Float(self.heartbeatVolume)
-			let targetVClock = Float(self.clockVolume)
-			let targetVBrown = Float(self.brownVolume)
-			let targetVBreath = Float(self.breathVolume)
+			let targetVHeart = state.heartbeatVolume
+			let targetVClock = state.clockVolume
+			let targetVBrown = state.brownVolume
+			let targetVBreath = state.breathVolume
 			let smoothFactor: Float = 0.005
 
 			let dt = 1.0 / self.sampleRate
-			let bpmDropRate = self.enableSlowdown ? ((self.startBPM - self.targetBPM) / (self.slowdownMinutes * 60.0 * self.sampleRate)) : 0.0
-			let placement = self.placementOptions[self.placementIndex]
+			let bpmDropRate = state.enableSlowdown ? ((self.startBPM - state.targetBPM) / (state.slowdownMinutes * 60.0 * self.sampleRate)) : 0.0
 			
 			let ptrL = ablPointer[0].mData?.assumingMemoryBound(to: Float.self)
 			let ptrR = ablPointer[1].mData?.assumingMemoryBound(to: Float.self)
 			
 			for frame in 0..<Int(frameCount) {
-				// Smooth volume incrementally without early exit to prevent clicks when zeroing
 				self.smoothedVHeart += (targetVHeart - self.smoothedVHeart) * smoothFactor
 				self.smoothedVClock += (targetVClock - self.smoothedVClock) * smoothFactor
 				self.smoothedVBrown += (targetVBrown - self.smoothedVBrown) * smoothFactor
@@ -842,19 +932,19 @@ class AudioEngineManager: ObservableObject {
 				var flowEnv: Float = 0
 				var beatDuration = 60.0 / self.currentDynamicBPM
 				
-				if self.enableSlowdown {
-					if bpmDropRate > 0 && self.currentDynamicBPM > self.targetBPM {
+				if state.enableSlowdown {
+					if bpmDropRate > 0 && self.currentDynamicBPM > state.targetBPM {
 						self.currentDynamicBPM -= bpmDropRate
-						if self.currentDynamicBPM < self.targetBPM { self.currentDynamicBPM = self.targetBPM }
-					} else if bpmDropRate < 0 && self.currentDynamicBPM < self.targetBPM {
+						if self.currentDynamicBPM < state.targetBPM { self.currentDynamicBPM = state.targetBPM }
+					} else if bpmDropRate < 0 && self.currentDynamicBPM < state.targetBPM {
 						self.currentDynamicBPM -= bpmDropRate
-						if self.currentDynamicBPM > self.targetBPM { self.currentDynamicBPM = self.targetBPM }
+						if self.currentDynamicBPM > state.targetBPM { self.currentDynamicBPM = state.targetBPM }
 					}
 					
 					beatDuration = 60.0 / self.currentDynamicBPM
 					self.tBeat += dt
 					
-					let clockType = self.clockOptions[self.clockTypeIndex]
+					let clockType = self.clockOptions[state.clockTypeIndex]
 					let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
 					
 					if self.tBeat >= beatDuration {
@@ -864,19 +954,19 @@ class AudioEngineManager: ObservableObject {
 						
 						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						
-						if syncBreath && !isManualBreathingActive {
+						if state.syncBreathing && !state.isBreathing {
 							let phaseBeat = self.beatCounter % 8
 							if phaseBeat != self.lastPhaseBeat {
 								self.lastPhaseBeat = phaseBeat
 								if phaseBeat == 0 {
 									DispatchQueue.main.async {
 										self.currentBreathingPhase = "Inhale (Sync)"
-										if !useRealBreath { self.playVoiceCue("INHALE") }
+										if !state.useRealBreathing { self.playVoiceCue("INHALE") }
 									}
 								} else if phaseBeat == 4 {
 									DispatchQueue.main.async {
 										self.currentBreathingPhase = "Exhale (Sync)"
-										if !useRealBreath { self.playVoiceCue("EXHALE") }
+										if !state.useRealBreathing { self.playVoiceCue("EXHALE") }
 									}
 								} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
 									let anchor = self.anchors.randomElement()!
@@ -957,19 +1047,19 @@ class AudioEngineManager: ObservableObject {
 						self.clkPlayIdx = 0
 						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						
-						if syncBreath && !isManualBreathingActive {
+						if state.syncBreathing && !state.isBreathing {
 							let phaseBeat = self.beatCounter % 8
 							if phaseBeat != self.lastPhaseBeat {
 								self.lastPhaseBeat = phaseBeat
 								if phaseBeat == 0 {
 									DispatchQueue.main.async {
 										self.currentBreathingPhase = "Inhale (Sync)"
-										if !useRealBreath { self.playVoiceCue("INHALE") }
+										if !state.useRealBreathing { self.playVoiceCue("INHALE") }
 									}
 								} else if phaseBeat == 4 {
 									DispatchQueue.main.async {
 										self.currentBreathingPhase = "Exhale (Sync)"
-										if !useRealBreath { self.playVoiceCue("EXHALE") }
+										if !state.useRealBreathing { self.playVoiceCue("EXHALE") }
 									}
 								} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
 									let anchor = self.anchors.randomElement()!
@@ -984,7 +1074,7 @@ class AudioEngineManager: ObservableObject {
 						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) }
 					}
 					
-					let clockType = self.clockOptions[self.clockTypeIndex]
+					let clockType = self.clockOptions[state.clockTypeIndex]
 					let halfBeat = nBeat / 2
 					if clockType == "Pocket Watch" && idxBeat == halfBeat {
 						self.clkPlayIdx2 = 0
@@ -1000,21 +1090,21 @@ class AudioEngineManager: ObservableObject {
 				hL += whooshL[idxNoise] * flowEnv * wVol
 				hR += whooshR[idxNoise] * flowEnv * wVol
 				
-				let posH = self.getPanPos(mode: self.panHeartIndex, time: tChunk)
+				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
 				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart)
 				
 				var chunkCL: Float = 0
 				var chunkCR: Float = 0
 				if vClock > 0 {
 					var clkWave: Float = 0
-					if self.syncClock {
+					if state.syncClock {
 						if self.clkPlayIdx < clk.count { clkWave += clk[self.clkPlayIdx]; self.clkPlayIdx += 1 }
 						if self.clkPlayIdx2 < clk.count { clkWave += clk[self.clkPlayIdx2]; self.clkPlayIdx2 += 1 }
 					} else {
 						let idxClock = currentFrame % clk.count
 						clkWave = clk[idxClock]
 					}
-					let posC = self.getPanPos(mode: self.panClockIndex, time: tChunk)
+					let posC = self.getPanPos(mode: state.panClockIndex, time: tChunk)
 					let pannedC = self.applyStereoPan(inL: clkWave, inR: clkWave, pos: posC, vol: vClock * 0.4)
 					chunkCL = pannedC.0
 					chunkCR = pannedC.1
@@ -1023,43 +1113,42 @@ class AudioEngineManager: ObservableObject {
 				var chunkBL: Float = 0
 				var chunkBR: Float = 0
 				if vBrown > 0 {
-					let posB = self.getPanPos(mode: self.panBrownIndex, time: tChunk)
+					let posB = self.getPanPos(mode: state.panBrownIndex, time: tChunk)
 					let pannedB = self.applyStereoPan(inL: brownL[idxNoise], inR: brownR[idxNoise], pos: posB, vol: vBrown * 0.5)
 					chunkBL = pannedB.0
 					chunkBR = pannedB.1
 				}
 				
-				// Integrated Breathing Synthesis (Overriding all AVAudioPlayer loops)
 				var chunkBrL: Float = 0
 				var chunkBrR: Float = 0
 				
-				if vBreath > 0 || isManualBreathingActive {
+				if vBreath > 0 || state.isBreathing {
 					var breathEnv: Float = 0
 					var sampleIdxForRealBreath = 0
 					var usingInhale = false
 					var usingExhale = false
 					
-					if isManualBreathingActive {
-						if manualState != self.lastManualState {
+					if state.isBreathing {
+						if state.manualBreathState != self.lastManualState {
 							self.breathFrameCounter = 0
-							self.lastManualState = manualState
+							self.lastManualState = state.manualBreathState
 						}
 						self.breathFrameCounter += 1
 						sampleIdxForRealBreath = self.breathFrameCounter
 						
-						if manualState == 1 {
+						if state.manualBreathState == 1 {
 							usingInhale = true
 							breathEnv = 1.0
-						} else if manualState == 2 {
+						} else if state.manualBreathState == 2 {
 							usingExhale = true
 							breathEnv = 1.0
 						}
-					} else if syncBreath {
+					} else if state.syncBreathing {
 						self.lastManualState = 0
 						self.breathFrameCounter = 0
 						
 						let syncPhase: Double
-						if self.enableSlowdown {
+						if state.enableSlowdown {
 							syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration)
 						} else {
 							let beatRatio = Double(currentFrame % nBeat) / Double(nBeat)
@@ -1100,7 +1189,7 @@ class AudioEngineManager: ObservableObject {
 					var breathSampleL: Float = 0
 					var breathSampleR: Float = 0
 					
-					if useRealBreath {
+					if state.useRealBreathing {
 						if usingInhale && !realInhale.isEmpty {
 							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realInhale.count)
 							breathSampleL = realInhale[idx]
@@ -1115,8 +1204,8 @@ class AudioEngineManager: ObservableObject {
 						breathSampleR = breathR[idxNoise]
 					}
 					
-					let activeBreathVol = isManualBreathingActive ? Float(max(vBreath, 0.5)) : vBreath
-					let posBr = self.getPanPos(mode: self.panBreathIndex, time: tChunk)
+					let activeBreathVol = state.isBreathing ? Float(max(vBreath, 0.5)) : vBreath
+					let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
 					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: activeBreathVol * 0.6)
 					
 					chunkBrL = pannedBr.0
@@ -1588,26 +1677,10 @@ struct GeneratorView: View {
 				}
 			}
 			
-			Section(header: Text("Heartbeat Anatomy Spatial Placement").accessibilityHidden(true)) {
-				Picker("Placement", selection: $engine.placementIndex) {
-					ForEach(0..<engine.placementOptions.count, id: \.self) { index in
-						Text(engine.placementOptions[index]).tag(index)
-					}
-				}
-				.pickerStyle(SegmentedPickerStyle())
-				.accessibilityLabel("Heartbeat Anatomy Spatial Placement")
-			}
-			
 			Section(header: Text("Procedural Layer Mixer").accessibilityHidden(true)) {
 				VStack(alignment: .leading) {
 					Text("Synth Heartbeat").accessibilityHidden(true)
 					Slider(value: $engine.heartbeatVolume, in: 0...1).accessibilityLabel("Synth Heartbeat Volume")
-					Picker("Heartbeat Pan", selection: $engine.panHeartIndex) {
-						ForEach(0..<engine.panOptions.count, id: \.self) { index in
-							Text(engine.panOptions[index]).tag(index)
-						}
-					}
-					.pickerStyle(MenuPickerStyle())
 				}.padding(.vertical, 4)
 				
 				VStack(alignment: .leading) {
@@ -1631,14 +1704,44 @@ struct GeneratorView: View {
 				VStack(alignment: .leading) {
 					Text("Slow Breathing Base").bold()
 					Slider(value: $engine.breathVolume, in: 0...1).accessibilityLabel("Slow Breathing Volume")
-					
-					Picker("Breathing Pan", selection: $engine.panBreathIndex) {
-						ForEach(0..<engine.panOptions.count, id: \.self) { index in
-							Text(engine.panOptions[index]).tag(index)
-						}
-					}
-					.pickerStyle(MenuPickerStyle())
 				}.padding(.vertical, 4)
+			}
+			
+			Section(header: Text("Spatial Audio Panning")) {
+				Picker("Heartbeat Anatomy", selection: $engine.placementIndex) {
+					ForEach(0..<engine.placementOptions.count, id: \.self) { index in
+						Text(engine.placementOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
+				
+				Picker("Heartbeat Position", selection: $engine.panHeartIndex) {
+					ForEach(0..<engine.panOptions.count, id: \.self) { index in
+						Text(engine.panOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
+				
+				Picker("Breathing Position", selection: $engine.panBreathIndex) {
+					ForEach(0..<engine.panOptions.count, id: \.self) { index in
+						Text(engine.panOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
+				
+				Picker("Clock Position", selection: $engine.panClockIndex) {
+					ForEach(0..<engine.panOptions.count, id: \.self) { index in
+						Text(engine.panOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
+				
+				Picker("Brown Noise Position", selection: $engine.panBrownIndex) {
+					ForEach(0..<engine.panOptions.count, id: \.self) { index in
+						Text(engine.panOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
 			}
 		}
 	}
@@ -1764,10 +1867,10 @@ struct SettingsView: View {
 	@ObservedObject var engine: AudioEngineManager
 	var body: some View {
 		Form {
-			Section(header: Text("Voice Preferences")) {
-				Toggle("Use Real Breathing Sounds", isOn: $engine.useRealBreathing)
+			Section(header: Text("Breathing Audio Setup")) {
+				Toggle("Use Real Breathing Recordings", isOn: $engine.useRealBreathing)
 					.accessibilityHint("Replaces voice cues with real breathing recordings.")
-				Toggle("Use Whispered Breathing Cues", isOn: $engine.useWhisper)
+				Toggle("Use Whispered Voice Cues", isOn: $engine.useWhisper)
 			}
 			
 			Section(header: Text("Intimacy & Immersion")) {
