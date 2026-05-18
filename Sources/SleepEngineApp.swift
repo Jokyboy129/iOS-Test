@@ -67,12 +67,14 @@ struct AudioRenderState {
 	var clockVolume: Float = 0
 	var brownVolume: Float = 0
 	var breathVolume: Float = 0
+	var clickVolume: Float = 0
 	var panHeartIndex: Int = 0
 	var panClockIndex: Int = 0
 	var panBrownIndex: Int = 0
 	var panBreathIndex: Int = 0
 	var clockTypeIndex: Int = 0
 	var syncClock: Bool = false
+	var syncClick: Bool = true
 	var enableSlowdown: Bool = false
 	var targetBPM: Double = 40.0
 	var slowdownMinutes: Double = 30.0
@@ -133,6 +135,7 @@ class AudioEngineManager: ObservableObject {
 	@Published var clockVolume: Double { didSet { save("clockVolume", clockVolume); syncRenderState() } }
 	@Published var brownVolume: Double { didSet { save("brownVolume", brownVolume); syncRenderState() } }
 	@Published var breathVolume: Double { didSet { save("breathVolume", breathVolume); syncRenderState() } }
+	@Published var clickVolume: Double { didSet { save("clickVolume", clickVolume); syncRenderState() } }
 	
 	@Published var rainVolume: Double { didSet { save("rainVolume", rainVolume); updateVolumes() } }
 	@Published var organicHeartbeatVolume: Double { didSet { save("organicHeartbeatVolume", organicHeartbeatVolume); updateVolumes() } }
@@ -144,6 +147,7 @@ class AudioEngineManager: ObservableObject {
 	
 	@Published var clockTypeIndex: Int { didSet { save("clockTypeIndex", clockTypeIndex); rebuildPrototypes(); syncRenderState() } }
 	@Published var syncClock: Bool { didSet { save("syncClock", syncClock); syncRenderState() } }
+	@Published var syncClick: Bool { didSet { save("syncClick", syncClick); syncRenderState() } }
 	
 	@Published var mixWithOthers: Bool { didSet { save("mixWithOthers", mixWithOthers); applyAudioSessionSettings() } }
 	@Published var useWhisper: Bool { didSet { save("useWhisper", useWhisper) } }
@@ -204,6 +208,7 @@ class AudioEngineManager: ObservableObject {
 	
 	private var realInhaleBuffer = [Float]()
 	private var realExhaleBuffer = [Float]()
+	private var clickBuffer = [Float]()
 	
 	private var nNoise = 0
 	private var frameIdx = 0
@@ -216,11 +221,13 @@ class AudioEngineManager: ObservableObject {
 	private var beatCounter: Int = 0
 	private var clkPlayIdx: Int = Int.max
 	private var clkPlayIdx2: Int = Int.max
+	private var clickPlayIdx: Int = Int.max
 	
 	private var smoothedVHeart: Float = 0.0
 	private var smoothedVClock: Float = 0.0
 	private var smoothedVBrown: Float = 0.0
 	private var smoothedVBreath: Float = 0.0
+	private var smoothedVClick: Float = 0.0
 	
 	private var breathFrameCounter: Int = 0
 	private var lastManualState: Int = 0
@@ -231,7 +238,6 @@ class AudioEngineManager: ObservableObject {
 	@Published var currentBreathingPhase: String = "Ready"
 	
 	init() {
-		// Load from UserDefaults
 		let ud = UserDefaults.standard
 		self.selectedProfileIndex = ud.integer(forKey: "selectedProfileIndex")
 		self.placementIndex = ud.integer(forKey: "placementIndex")
@@ -241,6 +247,7 @@ class AudioEngineManager: ObservableObject {
 		self.clockVolume = ud.double(forKey: "clockVolume")
 		self.brownVolume = ud.double(forKey: "brownVolume")
 		self.breathVolume = ud.double(forKey: "breathVolume")
+		self.clickVolume = ud.double(forKey: "clickVolume")
 		self.rainVolume = ud.double(forKey: "rainVolume")
 		self.organicHeartbeatVolume = ud.double(forKey: "organicHeartbeatVolume")
 		
@@ -251,6 +258,7 @@ class AudioEngineManager: ObservableObject {
 		
 		self.clockTypeIndex = ud.integer(forKey: "clockTypeIndex")
 		self.syncClock = ud.bool(forKey: "syncClock")
+		self.syncClick = ud.object(forKey: "syncClick") == nil ? true : ud.bool(forKey: "syncClick")
 		self.mixWithOthers = ud.bool(forKey: "mixWithOthers")
 		self.useWhisper = ud.bool(forKey: "useWhisper")
 		self.useRealBreathing = ud.object(forKey: "useRealBreathing") == nil ? true : ud.bool(forKey: "useRealBreathing")
@@ -286,6 +294,7 @@ class AudioEngineManager: ObservableObject {
 		
 		realInhaleBuffer = loadWAV(filename: "REAL_INHALE")
 		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE")
+		clickBuffer = loadWAV(filename: "CLICK")
 		
 		loadTracks()
 		loadAlarmTrack()
@@ -311,12 +320,14 @@ class AudioEngineManager: ObservableObject {
 		newState.clockVolume = Float(self.clockVolume)
 		newState.brownVolume = Float(self.brownVolume)
 		newState.breathVolume = Float(self.breathVolume)
+		newState.clickVolume = Float(self.clickVolume)
 		newState.panHeartIndex = self.panHeartIndex
 		newState.panClockIndex = self.panClockIndex
 		newState.panBrownIndex = self.panBrownIndex
 		newState.panBreathIndex = self.panBreathIndex
 		newState.clockTypeIndex = self.clockTypeIndex
 		newState.syncClock = self.syncClock
+		newState.syncClick = self.syncClick
 		newState.enableSlowdown = self.enableSlowdown
 		newState.targetBPM = self.targetBPM
 		newState.slowdownMinutes = self.slowdownMinutes
@@ -353,7 +364,6 @@ class AudioEngineManager: ObservableObject {
 			
 			guard let channelData = pcmBuffer.floatChannelData?[0] else { return nil }
 			
-			// 300ms smooth fade to prevent cuts and clicks between exercise phases
 			let fadeFrames = Int(sampleRate * 0.3)
 			
 			for i in 0..<frameCount {
@@ -366,7 +376,6 @@ class AudioEngineManager: ObservableObject {
 					env = Float(frameCount - i) / Float(fadeFrames)
 				}
 				
-				// Apply smooth quadratic easing to the envelope
 				let easedEnv = env * env * (3 - 2 * env)
 				channelData[i] = buffer[idx] * easedEnv
 			}
@@ -436,7 +445,7 @@ class AudioEngineManager: ObservableObject {
 		rainPlayer?.volume = Float(rainVolume * masterVolume * dynamicVolumeMultiplier)
 		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume * dynamicVolumeMultiplier)
 		breathingPlayer?.volume = Float(masterVolume * dynamicVolumeMultiplier)
-		anchorPlayer?.volume = Float(masterVolume * dynamicVolumeMultiplier * 1.5)
+		anchorPlayer?.volume = Float(masterVolume * dynamicVolumeMultiplier * 2.0)
 		for track in importedTracks {
 			track.masterVolume = masterVolume
 			track.dynamicVolumeMultiplier = dynamicVolumeMultiplier
@@ -451,10 +460,12 @@ class AudioEngineManager: ObservableObject {
 		beatCounter = 0
 		clkPlayIdx = Int.max
 		clkPlayIdx2 = Int.max
+		clickPlayIdx = Int.max
 		smoothedVHeart = 0.0
 		smoothedVClock = 0.0
 		smoothedVBrown = 0.0
 		smoothedVBreath = 0.0
+		smoothedVClick = 0.0
 		breathFrameCounter = 0
 		lastManualState = 0
 		lastPhaseBeat = -1
@@ -844,7 +855,7 @@ class AudioEngineManager: ObservableObject {
 		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else { return }
 		do {
 			let player = try AVAudioPlayer(contentsOf: url)
-			player.volume = Float(masterVolume * dynamicVolumeMultiplier) * (isAnchor ? 1.5 : 1.0)
+			player.volume = Float(masterVolume * dynamicVolumeMultiplier) * (isAnchor ? 2.0 : 1.0)
 			player.pan = isAnchor ? Float.random(in: -0.8...0.8) : getPanPos(mode: panBreathIndex, time: 0)
 			
 			if isAnchor {
@@ -955,12 +966,13 @@ class AudioEngineManager: ObservableObject {
 			let whooshL = self.whooshL
 			let whooshR = self.whooshR
 			let clk = self.clk
+			let click = self.clickBuffer
 			let realInhale = self.realInhaleBuffer
 			let realExhale = self.realExhaleBuffer
 			let nBeat = self.nBeat
 			let nNoise = self.nNoise
 			
-			// Extract 100% THREAD SAFE Render State variables. This completely prevents UserDefaults crackling.
+			// Extract 100% THREAD SAFE Render State variables
 			let state = self.renderState
 			let config = self.profiles[state.selectedProfileIndex]
 			let placement = self.placementOptions[state.placementIndex]
@@ -973,6 +985,7 @@ class AudioEngineManager: ObservableObject {
 			let targetVClock = state.clockVolume
 			let targetVBrown = state.brownVolume
 			let targetVBreath = state.breathVolume
+			let targetVClick = state.clickVolume
 			let smoothFactor: Float = 0.005
 
 			let dt = 1.0 / self.sampleRate
@@ -986,12 +999,14 @@ class AudioEngineManager: ObservableObject {
 				self.smoothedVClock += (targetVClock - self.smoothedVClock) * smoothFactor
 				self.smoothedVBrown += (targetVBrown - self.smoothedVBrown) * smoothFactor
 				self.smoothedVBreath += (targetVBreath - self.smoothedVBreath) * smoothFactor
+				self.smoothedVClick += (targetVClick - self.smoothedVClick) * smoothFactor
 				
 				let vHeart = self.smoothedVHeart
 				let vClock = self.smoothedVClock
 				let vBrown = self.smoothedVBrown
 				let vBreath = self.smoothedVBreath
-				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2)
+				let vClick = self.smoothedVClick
+				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2) + (vClick * 0.3)
 
 				let currentFrame = self.frameIdx + frame
 				let timeInSeconds = Double(currentFrame) / self.sampleRate
@@ -1021,6 +1036,7 @@ class AudioEngineManager: ObservableObject {
 						self.tBeat -= beatDuration
 						self.beatCounter += 1
 						self.clkPlayIdx = 0
+						if state.syncClick { self.clickPlayIdx = 0 }
 						
 						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						
@@ -1115,6 +1131,7 @@ class AudioEngineManager: ObservableObject {
 					if idxBeat == 0 {
 						self.beatCounter += 1
 						self.clkPlayIdx = 0
+						if state.syncClick { self.clickPlayIdx = 0 }
 						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						
 						if state.syncBreathing && !state.isBreathing {
@@ -1155,6 +1172,11 @@ class AudioEngineManager: ObservableObject {
 					flowEnv = 0.6 + 0.4 * (lubEnv[idxBeat] + dubEnv[idxBeat])
 				}
 				
+				// Handle un-synced 1-second click
+				if !state.syncClick && currentFrame % Int(self.sampleRate) == 0 {
+					self.clickPlayIdx = 0
+				}
+				
 				let idxNoise = currentFrame % nNoise
 				let wVol = Float(config.whooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol
@@ -1180,6 +1202,15 @@ class AudioEngineManager: ObservableObject {
 					chunkCR = pannedC.1
 				}
 				
+				var chunkClickL: Float = 0
+				var chunkClickR: Float = 0
+				if vClick > 0 && self.clickPlayIdx < click.count {
+					let cSample = click[self.clickPlayIdx] * vClick
+					chunkClickL = cSample
+					chunkClickR = cSample
+					self.clickPlayIdx += 1
+				}
+				
 				var chunkBL: Float = 0
 				var chunkBR: Float = 0
 				if vBrown > 0 {
@@ -1192,7 +1223,6 @@ class AudioEngineManager: ObservableObject {
 				var chunkBrL: Float = 0
 				var chunkBrR: Float = 0
 				
-				// ONLY render background breathing if manual exercises are NOT active to avoid overlap
 				if vBreath > 0 && !state.isBreathing {
 					var breathEnv: Float = 0
 					var sampleIdxForRealBreath = 0
@@ -1255,14 +1285,14 @@ class AudioEngineManager: ObservableObject {
 					}
 					
 					let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
-					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * 1.5)
+					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * 2.5)
 					
 					chunkBrL = pannedBr.0
 					chunkBrR = pannedBr.1
 				}
 				
-				let finalL = (chunkHL + chunkCL + chunkBL + chunkBrL) / totalGain
-				let finalR = (chunkHR + chunkCR + chunkBR + chunkBrR) / totalGain
+				let finalL = (chunkHL + chunkCL + chunkBL + chunkBrL + chunkClickL) / totalGain
+				let finalR = (chunkHR + chunkCR + chunkBR + chunkBrR + chunkClickR) / totalGain
 				
 				ptrL?[frame] = finalL
 				ptrR?[frame] = finalR
@@ -1506,6 +1536,7 @@ class AudioEngineManager: ObservableObject {
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
 			
 			if isAlarmOn {
+				do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
 				silentLoopPlayer?.play()
 			} else {
 				silentLoopPlayer?.stop()
@@ -1572,7 +1603,10 @@ class AudioEngineManager: ObservableObject {
 				  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
 			if type == .began {
 				if self.isPlaying { self.playStop() }
-				if self.isAlarmOn { self.silentLoopPlayer?.play() }
+				if self.isAlarmOn { 
+					do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
+					self.silentLoopPlayer?.play() 
+				}
 			} else if type == .ended {
 				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
 				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
@@ -1586,7 +1620,10 @@ class AudioEngineManager: ObservableObject {
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
 			if reason == .oldDeviceUnavailable {
 				if self.isPlaying { self.playStop() }
-				if self.isAlarmOn { self.silentLoopPlayer?.play() }
+				if self.isAlarmOn { 
+					do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
+					self.silentLoopPlayer?.play() 
+				}
 			}
 		}
 		
@@ -1762,6 +1799,12 @@ struct GeneratorView: View {
 					.pickerStyle(MenuPickerStyle())
 					
 					Toggle("Sync to Heartbeat", isOn: $engine.syncClock)
+				}.padding(.vertical, 4)
+				
+				VStack(alignment: .leading) {
+					Text("Click Track").accessibilityHidden(true)
+					Slider(value: $engine.clickVolume, in: 0...1).accessibilityLabel("Click Volume")
+					Toggle("Sync to Heartbeat", isOn: $engine.syncClick)
 				}.padding(.vertical, 4)
 				
 				VStack(alignment: .leading) {
