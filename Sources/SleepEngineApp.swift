@@ -89,6 +89,7 @@ class AudioEngineManager: ObservableObject {
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
 	var breathingPlayer: AVAudioPlayer?
+	var anchorPlayer: AVAudioPlayer?
 	var silentLoopPlayer: AVAudioPlayer?
 	
 	var hapticEngine: CHHapticEngine?
@@ -396,7 +397,6 @@ class AudioEngineManager: ObservableObject {
 			
 			hapticEngine?.stoppedHandler = { reason in
 				print("Haptic Engine stopped: \(reason)")
-				do { try self.hapticEngine?.start() } catch {}
 			}
 			hapticEngine?.resetHandler = {
 				do { try self.hapticEngine?.start() } catch {}
@@ -436,6 +436,7 @@ class AudioEngineManager: ObservableObject {
 		rainPlayer?.volume = Float(rainVolume * masterVolume * dynamicVolumeMultiplier)
 		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume * dynamicVolumeMultiplier)
 		breathingPlayer?.volume = Float(masterVolume * dynamicVolumeMultiplier)
+		anchorPlayer?.volume = Float(masterVolume * dynamicVolumeMultiplier * 1.5)
 		for track in importedTracks {
 			track.masterVolume = masterVolume
 			track.dynamicVolumeMultiplier = dynamicVolumeMultiplier
@@ -843,12 +844,19 @@ class AudioEngineManager: ObservableObject {
 		guard let url = Bundle.main.url(forResource: filename, withExtension: "wav") else { return }
 		do {
 			let player = try AVAudioPlayer(contentsOf: url)
-			player.volume = Float(masterVolume * dynamicVolumeMultiplier)
+			player.volume = Float(masterVolume * dynamicVolumeMultiplier) * (isAnchor ? 1.5 : 1.0)
 			player.pan = isAnchor ? Float.random(in: -0.8...0.8) : getPanPos(mode: panBreathIndex, time: 0)
-			if useRealBreathing && isBreathAction { player.numberOfLoops = -1 }
-			breathingPlayer?.stop()
-			player.play()
-			breathingPlayer = player
+			
+			if isAnchor {
+				anchorPlayer?.stop()
+				player.play()
+				anchorPlayer = player
+			} else {
+				if useRealBreathing && isBreathAction { player.numberOfLoops = -1 }
+				breathingPlayer?.stop()
+				player.play()
+				breathingPlayer = player
+			}
 		} catch {}
 	}
 	
@@ -920,6 +928,7 @@ class AudioEngineManager: ObservableObject {
 		manualBreathState = 0
 		currentBreathingPhase = "Ready"
 		breathingPlayer?.stop()
+		anchorPlayer?.stop()
 		if backgroundTaskID != .invalid {
 			UIApplication.shared.endBackgroundTask(backgroundTaskID)
 			backgroundTaskID = .invalid
@@ -982,7 +991,7 @@ class AudioEngineManager: ObservableObject {
 				let vClock = self.smoothedVClock
 				let vBrown = self.smoothedVBrown
 				let vBreath = self.smoothedVBreath
-				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.6)
+				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2)
 
 				let currentFrame = self.frameIdx + frame
 				let timeInSeconds = Double(currentFrame) / self.sampleRate
@@ -1246,7 +1255,7 @@ class AudioEngineManager: ObservableObject {
 					}
 					
 					let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
-					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * 0.6)
+					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * 1.5)
 					
 					chunkBrL = pannedBr.0
 					chunkBrR = pannedBr.1
@@ -1495,6 +1504,12 @@ class AudioEngineManager: ObservableObject {
 			sleepTimerStartDate = nil
 			isMorningFadeActive = false
 			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
+			
+			if isAlarmOn {
+				silentLoopPlayer?.play()
+			} else {
+				silentLoopPlayer?.stop()
+			}
 		} else {
 			do {
 				let session = AVAudioSession.sharedInstance()
@@ -1557,6 +1572,7 @@ class AudioEngineManager: ObservableObject {
 				  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
 			if type == .began {
 				if self.isPlaying { self.playStop() }
+				if self.isAlarmOn { self.silentLoopPlayer?.play() }
 			} else if type == .ended {
 				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
 				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
@@ -1570,6 +1586,7 @@ class AudioEngineManager: ObservableObject {
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
 			if reason == .oldDeviceUnavailable {
 				if self.isPlaying { self.playStop() }
+				if self.isAlarmOn { self.silentLoopPlayer?.play() }
 			}
 		}
 		
@@ -1582,6 +1599,17 @@ class AudioEngineManager: ObservableObject {
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.player?.play() }
 				} catch {}
+			}
+		}
+		
+		NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+			guard let self = self else { return }
+			if self.enableHaptics {
+				do {
+					try self.hapticEngine?.start()
+				} catch {
+					self.setupCoreHaptics()
+				}
 			}
 		}
 	}
