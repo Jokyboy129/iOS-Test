@@ -118,7 +118,7 @@ class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	let reverbNode = AVAudioUnitReverb()
-	let importedMixer = AVAudioMixerNode()
+	let preReverbMixer = AVAudioMixerNode()
 	
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
@@ -611,7 +611,7 @@ class AudioEngineManager: ObservableObject {
 				if let file = try? AVAudioFile(forReading: dest) {
 					track.audioFile = file
 					engine.attach(pNode)
-					engine.connect(pNode, to: importedMixer, format: file.processingFormat)
+					engine.connect(pNode, to: preReverbMixer, format: file.processingFormat)
 					track.scheduleNextLoop()
 					track.scheduleNextLoop()
 				}
@@ -708,7 +708,7 @@ class AudioEngineManager: ObservableObject {
 				if let file = try? AVAudioFile(forReading: url) {
 					track.audioFile = file
 					engine.attach(pNode)
-					engine.connect(pNode, to: importedMixer, format: file.processingFormat)
+					engine.connect(pNode, to: preReverbMixer, format: file.processingFormat)
 					track.scheduleNextLoop()
 					track.scheduleNextLoop()
 				}
@@ -1398,12 +1398,13 @@ class AudioEngineManager: ObservableObject {
 		
 		if let node = sourceNode {
 			engine.attach(node)
-			engine.attach(importedMixer)
+			engine.attach(preReverbMixer)
 			engine.attach(reverbNode)
 			
-			engine.connect(node, to: reverbNode, format: format)
-			engine.connect(importedMixer, to: reverbNode, format: format)
+			engine.connect(node, to: preReverbMixer, format: format)
+			engine.connect(preReverbMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: engine.mainMixerNode, format: format)
+			
 			updateReverb()
 		}
 	}
@@ -1647,6 +1648,8 @@ class AudioEngineManager: ObservableObject {
 				let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
 				try session.setCategory(.playback, mode: .default, options: options)
 				try session.setActive(true)
+				
+				if sourceNode == nil { setupAudio() }
 				
 				resetDynamicBPM()
 				engine.prepare()
