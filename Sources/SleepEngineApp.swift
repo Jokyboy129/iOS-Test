@@ -142,7 +142,7 @@ class AudioEngineManager: ObservableObject {
 	
 	var hapticEngine: CHHapticEngine?
 	
-	@Published var isPlaying = false
+	@Published var isPlaying = false { didSet { syncRenderState() } }
 	@Published var isAlarmRinging = false
 	@Published var importedTracks: [ImportedTrack] = []
 	
@@ -491,7 +491,7 @@ class AudioEngineManager: ObservableObject {
 	private func applyAudioSessionSettings() {
 		do {
 			let session = AVAudioSession.sharedInstance()
-			var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+			var options: AVAudioSession.CategoryOptions = []
 			if mixWithOthers { options.insert(.mixWithOthers) }
 			try session.setCategory(.playback, mode: .default, options: options)
 			try session.setPreferredSampleRate(sampleRate)
@@ -1064,7 +1064,6 @@ class AudioEngineManager: ObservableObject {
 		for track in importedTracks { track.pause() }
 		meditationPlayers.forEach { $0.pause() }
 		isPlaying = false
-		syncRenderState()
 		sleepTimerStartDate = nil
 		isMorningFadeActive = false
 		UIAccessibility.post(notification: .announcement, argument: "Soundscape halted.")
@@ -1668,7 +1667,7 @@ class AudioEngineManager: ObservableObject {
 		} else {
 			do {
 				let session = AVAudioSession.sharedInstance()
-				var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+				var options: AVAudioSession.CategoryOptions = []
 				if mixWithOthers { options.insert(.mixWithOthers) }
 				try session.setCategory(.playback, mode: .default, options: options)
 				try session.setActive(true)
