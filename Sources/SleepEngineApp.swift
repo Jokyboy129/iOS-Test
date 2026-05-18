@@ -50,9 +50,16 @@ class ImportedTrack: Identifiable, ObservableObject {
 	
 	private func updatePlayerVolume() {
 		let specificMultiplier = delayAfterMeditation ? postMeditationMultiplier : meditationFadeMultiplier
-		let vol = Float(volume * masterVolume * dynamicVolumeMultiplier * specificMultiplier)
-		avPlayer?.volume = vol
-		enginePlayerNode?.volume = vol
+		
+		if avPlayer != nil {
+			let avVol = Float(volume * masterVolume * dynamicVolumeMultiplier * specificMultiplier)
+			avPlayer?.setVolume(avVol, fadeDuration: 0.1)
+		}
+		
+		if enginePlayerNode != nil {
+			let engineVol = Float(volume * masterVolume) * Float(specificMultiplier)
+			enginePlayerNode?.volume = engineVol
+		}
 	}
 	
 	init(id: UUID = UUID(), name: String, volume: Double, isAppleMusic: Bool, path: String, delayAfterMeditation: Bool = false) {
@@ -112,6 +119,8 @@ struct AudioRenderState {
 	var useRealBreathing: Bool = true
 	var isBreathing: Bool = false
 	var manualBreathState: Int = 0
+	var soundscapeMultiplier: Float = 1.0
+	var isPlaying: Bool = false
 }
 
 class AudioEngineManager: ObservableObject {
@@ -120,6 +129,7 @@ class AudioEngineManager: ObservableObject {
 	let reverbNode = AVAudioUnitReverb()
 	let preReverbMixer = AVAudioMixerNode()
 	let importedMixer = AVAudioMixerNode()
+	let alarmMixer = AVAudioMixerNode()
 	
 	let breathingNode = AVAudioPlayerNode()
 	let anchorNode = AVAudioPlayerNode()
@@ -399,6 +409,8 @@ class AudioEngineManager: ObservableObject {
 		newState.useRealBreathing = self.useRealBreathing
 		newState.isBreathing = self.isBreathing
 		newState.manualBreathState = self.manualBreathState
+		newState.soundscapeMultiplier = Float(self.dynamicVolumeMultiplier * self.meditationFadeMultiplier)
+		newState.isPlaying = self.isPlaying
 		self.renderState = newState
 	}
 	
@@ -479,7 +491,8 @@ class AudioEngineManager: ObservableObject {
 	private func applyAudioSessionSettings() {
 		do {
 			let session = AVAudioSession.sharedInstance()
-			let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
+			var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+			if mixWithOthers { options.insert(.mixWithOthers) }
 			try session.setCategory(.playback, mode: .default, options: options)
 			try session.setPreferredSampleRate(sampleRate)
 			try session.setActive(true, options: .notifyOthersOnDeactivation)
@@ -522,12 +535,16 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	private func updateVolumes() {
-		let actualMaster = Float(masterVolume * dynamicVolumeMultiplier * meditationFadeMultiplier)
-		engine.mainMixerNode.outputVolume = actualMaster
-		rainPlayer?.volume = Float(rainVolume * masterVolume * dynamicVolumeMultiplier * meditationFadeMultiplier)
-		organicHeartbeatPlayer?.volume = Float(organicHeartbeatVolume * masterVolume * dynamicVolumeMultiplier * meditationFadeMultiplier)
+		let soundscapeMultiplier = Float(dynamicVolumeMultiplier * meditationFadeMultiplier)
 		
-		let baseVoiceVol = Float(masterVolume * dynamicVolumeMultiplier * meditationFadeMultiplier)
+		engine.mainMixerNode.outputVolume = Float(masterVolume)
+		
+		rainPlayer?.setVolume(Float(rainVolume * masterVolume) * soundscapeMultiplier, fadeDuration: 0.1)
+		organicHeartbeatPlayer?.setVolume(Float(organicHeartbeatVolume * masterVolume) * soundscapeMultiplier, fadeDuration: 0.1)
+		
+		importedMixer.outputVolume = Float(dynamicVolumeMultiplier)
+		
+		let baseVoiceVol = Float(masterVolume) * soundscapeMultiplier
 		breathingNode.volume = baseVoiceVol
 		anchorNode.volume = baseVoiceVol * 2.0
 		
@@ -537,6 +554,8 @@ class AudioEngineManager: ObservableObject {
 			track.meditationFadeMultiplier = meditationFadeMultiplier
 			track.postMeditationMultiplier = postMeditationMultiplier
 		}
+		
+		syncRenderState()
 	}
 	
 	private func resetDynamicBPM() {
@@ -608,7 +627,7 @@ class AudioEngineManager: ObservableObject {
 	
 	func reloadImportedTracksRouting() {
 		let currentlyPlaying = isPlaying
-		if currentlyPlaying { playStop() }
+		if currentlyPlaying { stopSoundscape(keepEngineAlive: false) }
 		
 		for track in importedTracks {
 			track.stop()
@@ -825,7 +844,7 @@ class AudioEngineManager: ObservableObject {
 		alarmAvPlayer?.stop()
 		alarmNode.stop()
 		if alarmNode.engine != nil {
-			engine.detach(alarmNode)
+			engine.disconnectNodeOutput(alarmNode)
 		}
 		
 		var targetURL: URL?
@@ -845,8 +864,10 @@ class AudioEngineManager: ObservableObject {
 		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
 			if let file = try? AVAudioFile(forReading: url) {
-				engine.attach(alarmNode)
-				engine.connect(alarmNode, to: preReverbMixer, format: file.processingFormat)
+				if alarmNode.engine == nil {
+					engine.attach(alarmNode)
+				}
+				engine.connect(alarmNode, to: alarmMixer, format: file.processingFormat)
 				alarmNode.scheduleFile(file, at: nil) { [weak self] in
 					self?.loopAlarmNode(file: file)
 				}
@@ -934,8 +955,7 @@ class AudioEngineManager: ObservableObject {
 			
 			if elapsed >= playTime + fadeTime {
 				dynamicVolumeMultiplier = 0.0
-				playStop()
-				sleepTimerStartDate = nil
+				stopSoundscape(keepEngineAlive: false)
 			} else if elapsed >= playTime {
 				dynamicVolumeMultiplier = 1.0 - ((elapsed - playTime) / fadeTime)
 			} else {
@@ -987,7 +1007,7 @@ class AudioEngineManager: ObservableObject {
 		do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
 		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
-			alarmNode.volume = 0.0
+			alarmMixer.outputVolume = 0.0
 			alarmNode.play()
 		} else {
 			alarmAvPlayer?.setVolume(0.0, fadeDuration: 0)
@@ -1008,13 +1028,14 @@ class AudioEngineManager: ObservableObject {
 			if self.isPlaying { self.dynamicVolumeMultiplier = 1.0 - progress }
 			
 			if self.alarmInReverb && !self.alarmTrackIsAppleMusic {
-				self.alarmNode.volume = Float(progress)
+				self.alarmMixer.outputVolume = Float(progress)
 			}
 			
 			if fadeStep >= totalSteps {
 				timer.invalidate()
 				if self.isPlaying {
-					self.playStop()
+					let keepAlive = self.isAlarmRinging && self.alarmInReverb && !self.alarmTrackIsAppleMusic
+					self.stopSoundscape(keepEngineAlive: keepAlive)
 					self.dynamicVolumeMultiplier = 1.0
 				}
 			}
@@ -1025,9 +1046,38 @@ class AudioEngineManager: ObservableObject {
 		alarmAvPlayer?.stop()
 		alarmAvPlayer?.currentTime = 0
 		alarmNode.stop()
+		alarmMixer.outputVolume = 1.0
 		isAlarmRinging = false
 		fadeTimer?.invalidate()
-		if isPlaying { playStop() }
+		
+		if isPlaying {
+			stopSoundscape(keepEngineAlive: false)
+		} else {
+			engine.pause()
+			if isAlarmOn { silentLoopPlayer?.play() } else { silentLoopPlayer?.stop() }
+		}
+	}
+	
+	func stopSoundscape(keepEngineAlive: Bool) {
+		rainPlayer?.pause()
+		organicHeartbeatPlayer?.pause()
+		for track in importedTracks { track.pause() }
+		meditationPlayers.forEach { $0.pause() }
+		isPlaying = false
+		syncRenderState()
+		sleepTimerStartDate = nil
+		isMorningFadeActive = false
+		UIAccessibility.post(notification: .announcement, argument: "Soundscape halted.")
+		
+		if !keepEngineAlive {
+			engine.pause()
+			if isAlarmOn {
+				do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
+				silentLoopPlayer?.play()
+			} else {
+				silentLoopPlayer?.stop()
+			}
+		}
 	}
 	
 	func simulateNightFadeOut() {
@@ -1043,7 +1093,7 @@ class AudioEngineManager: ObservableObject {
 			self.dynamicVolumeMultiplier = 1.0 - (Double(fadeStep) / Double(totalSteps))
 			if fadeStep >= totalSteps {
 				timer.invalidate()
-				if self.isPlaying { self.playStop() }
+				if self.isPlaying { self.stopSoundscape(keepEngineAlive: false) }
 				self.dynamicVolumeMultiplier = 1.0
 			}
 		}
@@ -1196,14 +1246,24 @@ class AudioEngineManager: ObservableObject {
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 		sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
 			guard let self = self else { return noErr }
+			let state = self.renderState
+			let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+			
+			if !state.isPlaying {
+				for frame in 0..<Int(frameCount) {
+					ablPointer[0].mData?.assumingMemoryBound(to: Float.self)[frame] = 0.0
+					ablPointer[1].mData?.assumingMemoryBound(to: Float.self)[frame] = 0.0
+				}
+				return noErr
+			}
+			
 			let lubL = self.lubL; let dubL = self.dubL; let lubR = self.lubR; let dubR = self.dubR
 			let lubEnv = self.lubEnv; let dubEnv = self.dubEnv; let brownL = self.brownL; let brownR = self.brownR
 			let breathL = self.breathL; let breathR = self.breathR; let whooshL = self.whooshL; let whooshR = self.whooshR
 			let clk = self.clk; let click = self.clickBuffer; let realInhale = self.realInhaleBuffer; let realExhale = self.realExhaleBuffer
 			let nBeat = self.nBeat; let nNoise = self.nNoise
-			let state = self.renderState; let config = self.profiles[state.selectedProfileIndex]
+			let config = self.profiles[state.selectedProfileIndex]
 			let placement = self.placementOptions[state.placementIndex]
-			let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
 			
 			if nNoise == 0 || nBeat == 0 { return noErr }
 			
@@ -1412,8 +1472,8 @@ class AudioEngineManager: ObservableObject {
 					chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 				}
 				
-				let finalL = (chunkHL + chunkCL + chunkBL + chunkBrL + chunkClickL) / totalGain
-				let finalR = (chunkHR + chunkCR + chunkBR + chunkBrR + chunkClickR) / totalGain
+				let finalL = ((chunkHL + chunkCL + chunkBL + chunkBrL + chunkClickL) / totalGain) * state.soundscapeMultiplier
+				let finalR = ((chunkHR + chunkCR + chunkBR + chunkBrR + chunkClickR) / totalGain) * state.soundscapeMultiplier
 				ptrL?[frame] = finalL; ptrR?[frame] = finalR
 			}
 			self.frameIdx += Int(frameCount)
@@ -1424,12 +1484,14 @@ class AudioEngineManager: ObservableObject {
 			engine.attach(node)
 			engine.attach(preReverbMixer)
 			engine.attach(importedMixer)
+			engine.attach(alarmMixer)
 			engine.attach(reverbNode)
 			engine.attach(breathingNode)
 			engine.attach(anchorNode)
 			
 			engine.connect(node, to: preReverbMixer, format: format)
 			engine.connect(importedMixer, to: preReverbMixer, format: format)
+			engine.connect(alarmMixer, to: preReverbMixer, format: format)
 			
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: engine.mainMixerNode, format: format)
@@ -1602,32 +1664,19 @@ class AudioEngineManager: ObservableObject {
 	
 	func playStop() {
 		if isPlaying {
-			engine.pause()
-			rainPlayer?.pause()
-			organicHeartbeatPlayer?.pause()
-			for track in importedTracks { track.pause() }
-			meditationPlayers.forEach { $0.pause() }
-			isPlaying = false
-			sleepTimerStartDate = nil
-			isMorningFadeActive = false
-			UIAccessibility.post(notification: .announcement, argument: "Engine halted.")
-			
-			if isAlarmOn {
-				do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
-				silentLoopPlayer?.play()
-			} else {
-				silentLoopPlayer?.stop()
-			}
+			stopSoundscape(keepEngineAlive: false)
 		} else {
 			do {
 				let session = AVAudioSession.sharedInstance()
-				let options: AVAudioSession.CategoryOptions = mixWithOthers ? [.mixWithOthers] : []
+				var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+				if mixWithOthers { options.insert(.mixWithOthers) }
 				try session.setCategory(.playback, mode: .default, options: options)
 				try session.setActive(true)
 				
 				if sourceNode == nil { setupAudio() }
 				
 				resetDynamicBPM()
+				updateVoiceRouting()
 				
 				engine.prepare()
 				
