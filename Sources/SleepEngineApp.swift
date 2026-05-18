@@ -1,4 +1,3 @@
-// Sources/SleepEngineApp.swift
 import SwiftUI
 import AVFoundation
 import MediaPlayer
@@ -53,7 +52,11 @@ class ImportedTrack: Identifiable, ObservableObject {
 		
 		if avPlayer != nil {
 			let avVol = Float(volume * masterVolume * dynamicVolumeMultiplier * specificMultiplier)
-			avPlayer?.setVolume(avVol, fadeDuration: 0.1)
+			if avPlayer?.isPlaying == true {
+				avPlayer?.setVolume(avVol, fadeDuration: 0.1)
+			} else {
+				avPlayer?.volume = avVol
+			}
 		}
 		
 		if enginePlayerNode != nil {
@@ -539,8 +542,19 @@ class AudioEngineManager: ObservableObject {
 		
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
 		
-		rainPlayer?.setVolume(Float(rainVolume * masterVolume) * soundscapeMultiplier, fadeDuration: 0.1)
-		organicHeartbeatPlayer?.setVolume(Float(organicHeartbeatVolume * masterVolume) * soundscapeMultiplier, fadeDuration: 0.1)
+		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
+		if rainPlayer?.isPlaying == true {
+			rainPlayer?.setVolume(targetRainVol, fadeDuration: 0.1)
+		} else {
+			rainPlayer?.volume = targetRainVol
+		}
+		
+		let targetOrgVol = Float(organicHeartbeatVolume * masterVolume) * soundscapeMultiplier
+		if organicHeartbeatPlayer?.isPlaying == true {
+			organicHeartbeatPlayer?.setVolume(targetOrgVol, fadeDuration: 0.1)
+		} else {
+			organicHeartbeatPlayer?.volume = targetOrgVol
+		}
 		
 		importedMixer.outputVolume = Float(dynamicVolumeMultiplier)
 		
@@ -1010,7 +1024,7 @@ class AudioEngineManager: ObservableObject {
 			alarmMixer.outputVolume = 0.0
 			alarmNode.play()
 		} else {
-			alarmAvPlayer?.setVolume(0.0, fadeDuration: 0)
+			alarmAvPlayer?.volume = 0.0
 			alarmAvPlayer?.play()
 			alarmAvPlayer?.setVolume(1.0, fadeDuration: fadeDuration)
 		}
