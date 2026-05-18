@@ -508,6 +508,7 @@ class AudioEngineManager: ObservableObject {
 	func updateVoiceRouting() {
 		guard sourceNode != nil else { return }
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+		
 		engine.disconnectNodeOutput(breathingNode)
 		engine.disconnectNodeOutput(anchorNode)
 		
@@ -612,7 +613,9 @@ class AudioEngineManager: ObservableObject {
 		for track in importedTracks {
 			track.stop()
 			if let pNode = track.enginePlayerNode {
-				engine.detach(pNode)
+				if pNode.engine != nil {
+					engine.detach(pNode)
+				}
 			}
 			track.enginePlayerNode = nil
 			track.audioFile = nil
@@ -737,7 +740,11 @@ class AudioEngineManager: ObservableObject {
 		for index in offsets {
 			let track = importedTracks[index]
 			track.stop()
-			if let pNode = track.enginePlayerNode { engine.detach(pNode) }
+			if let pNode = track.enginePlayerNode {
+				if pNode.engine != nil {
+					engine.detach(pNode)
+				}
+			}
 			track.enginePlayerNode = nil
 			track.audioFile = nil
 			
@@ -817,7 +824,9 @@ class AudioEngineManager: ObservableObject {
 		
 		alarmAvPlayer?.stop()
 		alarmNode.stop()
-		engine.disconnectNodeOutput(alarmNode)
+		if alarmNode.engine != nil {
+			engine.detach(alarmNode)
+		}
 		
 		var targetURL: URL?
 		if alarmTrackIsAppleMusic {
@@ -836,9 +845,7 @@ class AudioEngineManager: ObservableObject {
 		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
 			if let file = try? AVAudioFile(forReading: url) {
-				if alarmNode.engine == nil {
-					engine.attach(alarmNode)
-				}
+				engine.attach(alarmNode)
 				engine.connect(alarmNode, to: preReverbMixer, format: file.processingFormat)
 				alarmNode.scheduleFile(file, at: nil) { [weak self] in
 					self?.loopAlarmNode(file: file)
@@ -1418,23 +1425,16 @@ class AudioEngineManager: ObservableObject {
 			engine.attach(preReverbMixer)
 			engine.attach(importedMixer)
 			engine.attach(reverbNode)
-			engine.attach(alarmNode)
 			engine.attach(breathingNode)
 			engine.attach(anchorNode)
 			
 			engine.connect(node, to: preReverbMixer, format: format)
 			engine.connect(importedMixer, to: preReverbMixer, format: format)
 			
-			if voiceInReverb {
-				engine.connect(breathingNode, to: preReverbMixer, format: format)
-				engine.connect(anchorNode, to: preReverbMixer, format: format)
-			} else {
-				engine.connect(breathingNode, to: engine.mainMixerNode, format: format)
-				engine.connect(anchorNode, to: engine.mainMixerNode, format: format)
-			}
-			
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: engine.mainMixerNode, format: format)
+			
+			updateVoiceRouting()
 			updateReverb()
 		}
 	}
@@ -1628,7 +1628,6 @@ class AudioEngineManager: ObservableObject {
 				if sourceNode == nil { setupAudio() }
 				
 				resetDynamicBPM()
-				updateVoiceRouting()
 				
 				engine.prepare()
 				
