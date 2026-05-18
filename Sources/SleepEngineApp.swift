@@ -193,8 +193,8 @@ class AudioEngineManager: ObservableObject {
 	@Published var enableHaptics: Bool { didSet { save("enableHaptics", enableHaptics) } }
 	@Published var enableEnhancedAnchors: Bool { didSet { save("enableEnhancedAnchors", enableEnhancedAnchors) } }
 	@Published var reverbIndex: Int { didSet { save("reverbIndex", reverbIndex); updateReverb() } }
-	@Published var alarmInReverb: Bool { didSet { save("alarmInReverb", alarmInReverb) } }
-	@Published var voiceInReverb: Bool { didSet { save("voiceInReverb", voiceInReverb) } }
+	@Published var alarmInReverb: Bool { didSet { save("alarmInReverb", alarmInReverb); loadAlarmTrack() } }
+	@Published var voiceInReverb: Bool { didSet { save("voiceInReverb", voiceInReverb); updateVoiceRouting() } }
 	@Published var importedAudioInReverb: Bool { didSet { save("importedAudioInReverb", importedAudioInReverb); reloadImportedTracksRouting() } }
 	
 	@Published var enableSlowdown: Bool { didSet { save("enableSlowdown", enableSlowdown); syncRenderState() } }
@@ -505,6 +505,21 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
+	func updateVoiceRouting() {
+		guard sourceNode != nil else { return }
+		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+		engine.disconnectNodeOutput(breathingNode)
+		engine.disconnectNodeOutput(anchorNode)
+		
+		if voiceInReverb {
+			engine.connect(breathingNode, to: preReverbMixer, format: format)
+			engine.connect(anchorNode, to: preReverbMixer, format: format)
+		} else {
+			engine.connect(breathingNode, to: engine.mainMixerNode, format: format)
+			engine.connect(anchorNode, to: engine.mainMixerNode, format: format)
+		}
+	}
+	
 	private func updateVolumes() {
 		let actualMaster = Float(masterVolume * dynamicVolumeMultiplier * meditationFadeMultiplier)
 		engine.mainMixerNode.outputVolume = actualMaster
@@ -802,7 +817,7 @@ class AudioEngineManager: ObservableObject {
 		
 		alarmAvPlayer?.stop()
 		alarmNode.stop()
-		engine.detach(alarmNode)
+		engine.disconnectNodeOutput(alarmNode)
 		
 		var targetURL: URL?
 		if alarmTrackIsAppleMusic {
@@ -821,7 +836,9 @@ class AudioEngineManager: ObservableObject {
 		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
 			if let file = try? AVAudioFile(forReading: url) {
-				engine.attach(alarmNode)
+				if alarmNode.engine == nil {
+					engine.attach(alarmNode)
+				}
 				engine.connect(alarmNode, to: preReverbMixer, format: file.processingFormat)
 				alarmNode.scheduleFile(file, at: nil) { [weak self] in
 					self?.loopAlarmNode(file: file)
@@ -1608,17 +1625,10 @@ class AudioEngineManager: ObservableObject {
 				try session.setCategory(.playback, mode: .default, options: options)
 				try session.setActive(true)
 				
-				resetDynamicBPM()
+				if sourceNode == nil { setupAudio() }
 				
-				if voiceInReverb {
-					engine.disconnectNodeInput(preReverbMixer)
-					engine.connect(breathingNode, to: preReverbMixer, format: nil)
-					engine.connect(anchorNode, to: preReverbMixer, format: nil)
-				} else {
-					engine.disconnectNodeInput(engine.mainMixerNode)
-					engine.connect(breathingNode, to: engine.mainMixerNode, format: nil)
-					engine.connect(anchorNode, to: engine.mainMixerNode, format: nil)
-				}
+				resetDynamicBPM()
+				updateVoiceRouting()
 				
 				engine.prepare()
 				
