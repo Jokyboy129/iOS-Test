@@ -72,6 +72,7 @@ struct AudioRenderState {
 	var panClockIndex: Int = 0
 	var panBrownIndex: Int = 0
 	var panBreathIndex: Int = 0
+	var panClickIndex: Int = 0
 	var clockTypeIndex: Int = 0
 	var syncClock: Bool = false
 	var syncClick: Bool = true
@@ -87,6 +88,7 @@ struct AudioRenderState {
 class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
+	let reverbNode = AVAudioUnitReverb()
 	
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
@@ -122,11 +124,12 @@ class AudioEngineManager: ObservableObject {
 	let clockOptions = ["Quartz Wall Clock", "Pocket Watch", "Grandfather Clock", "Metronome"]
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
 	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
+	let reverbOptions = ["Dry / No Reverb", "Small Room", "Medium Hall", "Large Hall", "Cathedral"]
 	
 	// Thread-Safe Render State
 	private var renderState = AudioRenderState()
 	
-	// Published Properties (No AppStorage to prevent threading locks)
+	// Published Properties
 	@Published var selectedProfileIndex: Int { didSet { save("selectedProfileIndex", selectedProfileIndex); resetDynamicBPM(); rebuildPrototypes(); updateNowPlaying(); syncRenderState() } }
 	@Published var placementIndex: Int { didSet { save("placementIndex", placementIndex); rebuildPrototypes(); syncRenderState() } }
 	@Published var masterVolume: Double { didSet { save("masterVolume", masterVolume); updateVolumes() } }
@@ -144,6 +147,7 @@ class AudioEngineManager: ObservableObject {
 	@Published var panClockIndex: Int { didSet { save("panClockIndex", panClockIndex); syncRenderState() } }
 	@Published var panBrownIndex: Int { didSet { save("panBrownIndex", panBrownIndex); syncRenderState() } }
 	@Published var panBreathIndex: Int { didSet { save("panBreathIndex", panBreathIndex); syncRenderState() } }
+	@Published var panClickIndex: Int { didSet { save("panClickIndex", panClickIndex); syncRenderState() } }
 	
 	@Published var clockTypeIndex: Int { didSet { save("clockTypeIndex", clockTypeIndex); rebuildPrototypes(); syncRenderState() } }
 	@Published var syncClock: Bool { didSet { save("syncClock", syncClock); syncRenderState() } }
@@ -155,6 +159,7 @@ class AudioEngineManager: ObservableObject {
 	
 	@Published var enableHaptics: Bool { didSet { save("enableHaptics", enableHaptics) } }
 	@Published var enableEnhancedAnchors: Bool { didSet { save("enableEnhancedAnchors", enableEnhancedAnchors) } }
+	@Published var reverbIndex: Int { didSet { save("reverbIndex", reverbIndex); updateReverb() } }
 	
 	@Published var enableSlowdown: Bool { didSet { save("enableSlowdown", enableSlowdown); syncRenderState() } }
 	@Published var targetBPM: Double { didSet { save("targetBPM", targetBPM); syncRenderState() } }
@@ -255,6 +260,7 @@ class AudioEngineManager: ObservableObject {
 		self.panClockIndex = ud.integer(forKey: "panClockIndex")
 		self.panBrownIndex = ud.integer(forKey: "panBrownIndex")
 		self.panBreathIndex = ud.integer(forKey: "panBreathIndex")
+		self.panClickIndex = ud.integer(forKey: "panClickIndex")
 		
 		self.clockTypeIndex = ud.integer(forKey: "clockTypeIndex")
 		self.syncClock = ud.bool(forKey: "syncClock")
@@ -265,6 +271,7 @@ class AudioEngineManager: ObservableObject {
 		
 		self.enableHaptics = ud.bool(forKey: "enableHaptics")
 		self.enableEnhancedAnchors = ud.bool(forKey: "enableEnhancedAnchors")
+		self.reverbIndex = ud.integer(forKey: "reverbIndex")
 		self.enableSlowdown = ud.bool(forKey: "enableSlowdown")
 		self.targetBPM = ud.object(forKey: "targetBPM") == nil ? 40.0 : ud.double(forKey: "targetBPM")
 		self.slowdownMinutes = ud.object(forKey: "slowdownMinutes") == nil ? 30.0 : ud.double(forKey: "slowdownMinutes")
@@ -325,6 +332,7 @@ class AudioEngineManager: ObservableObject {
 		newState.panClockIndex = self.panClockIndex
 		newState.panBrownIndex = self.panBrownIndex
 		newState.panBreathIndex = self.panBreathIndex
+		newState.panClickIndex = self.panClickIndex
 		newState.clockTypeIndex = self.clockTypeIndex
 		newState.syncClock = self.syncClock
 		newState.syncClick = self.syncClick
@@ -436,6 +444,25 @@ class AudioEngineManager: ObservableObject {
 			try session.setActive(true, options: .notifyOthersOnDeactivation)
 		} catch {
 			print("Audio Session error: \(error)")
+		}
+	}
+	
+	func updateReverb() {
+		switch reverbIndex {
+		case 1:
+			reverbNode.loadFactoryPreset(.smallRoom)
+			reverbNode.wetDryMix = 30
+		case 2:
+			reverbNode.loadFactoryPreset(.mediumHall)
+			reverbNode.wetDryMix = 40
+		case 3:
+			reverbNode.loadFactoryPreset(.largeRoom)
+			reverbNode.wetDryMix = 50
+		case 4:
+			reverbNode.loadFactoryPreset(.cathedral)
+			reverbNode.wetDryMix = 60
+		default:
+			reverbNode.wetDryMix = 0
 		}
 	}
 	
@@ -1205,9 +1232,11 @@ class AudioEngineManager: ObservableObject {
 				var chunkClickL: Float = 0
 				var chunkClickR: Float = 0
 				if vClick > 0 && self.clickPlayIdx < click.count {
-					let cSample = click[self.clickPlayIdx] * vClick
-					chunkClickL = cSample
-					chunkClickR = cSample
+					let cSample = click[self.clickPlayIdx]
+					let posClick = self.getPanPos(mode: state.panClickIndex, time: tChunk)
+					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vClick * 0.8)
+					chunkClickL = pannedClick.0
+					chunkClickR = pannedClick.1
 					self.clickPlayIdx += 1
 				}
 				
@@ -1304,7 +1333,10 @@ class AudioEngineManager: ObservableObject {
 		
 		if let node = sourceNode {
 			engine.attach(node)
-			engine.connect(node, to: engine.mainMixerNode, format: format)
+			engine.attach(reverbNode)
+			engine.connect(node, to: reverbNode, format: format)
+			engine.connect(reverbNode, to: engine.mainMixerNode, format: format)
+			updateReverb()
 		}
 	}
 	
@@ -1847,6 +1879,13 @@ struct GeneratorView: View {
 				}
 				.pickerStyle(MenuPickerStyle())
 				
+				Picker("Click Position", selection: $engine.panClickIndex) {
+					ForEach(0..<engine.panOptions.count, id: \.self) { index in
+						Text(engine.panOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
+				
 				Picker("Brown Noise Position", selection: $engine.panBrownIndex) {
 					ForEach(0..<engine.panOptions.count, id: \.self) { index in
 						Text(engine.panOptions[index]).tag(index)
@@ -1978,6 +2017,15 @@ struct SettingsView: View {
 	@ObservedObject var engine: AudioEngineManager
 	var body: some View {
 		Form {
+			Section(header: Text("Acoustics & Space")) {
+				Picker("Room Reverb", selection: $engine.reverbIndex) {
+					ForEach(0..<engine.reverbOptions.count, id: \.self) { index in
+						Text(engine.reverbOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
+			}
+
 			Section(header: Text("Breathing Audio Setup")) {
 				Toggle("Use Real Breathing Recordings", isOn: $engine.useRealBreathing)
 					.accessibilityHint("Replaces voice cues with real breathing recordings.")
