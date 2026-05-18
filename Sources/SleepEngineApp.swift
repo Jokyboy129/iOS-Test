@@ -36,7 +36,11 @@ class ImportedTrack: Identifiable, ObservableObject {
 	@Published var volume: Double {
 		didSet { updatePlayerVolume() }
 	}
-	var player: AVAudioPlayer?
+	
+	var avPlayer: AVAudioPlayer?
+	var enginePlayerNode: AVAudioPlayerNode?
+	var audioFile: AVAudioFile?
+	
 	var isAppleMusic: Bool
 	var path: String
 	var masterVolume: Double = 1.0 {
@@ -47,16 +51,41 @@ class ImportedTrack: Identifiable, ObservableObject {
 	}
 	
 	private func updatePlayerVolume() {
-		player?.volume = Float(volume * masterVolume * dynamicVolumeMultiplier)
+		let vol = Float(volume * masterVolume * dynamicVolumeMultiplier)
+		avPlayer?.volume = vol
+		enginePlayerNode?.volume = vol
 	}
 	
-	init(id: UUID = UUID(), name: String, player: AVAudioPlayer?, volume: Double, isAppleMusic: Bool, path: String) {
+	init(id: UUID = UUID(), name: String, volume: Double, isAppleMusic: Bool, path: String) {
 		self.id = id
 		self.name = name
-		self.player = player
 		self.volume = volume
 		self.isAppleMusic = isAppleMusic
 		self.path = path
+	}
+	
+	func scheduleNextLoop() {
+		guard let pNode = enginePlayerNode, let file = audioFile else { return }
+		pNode.scheduleFile(file, at: nil, completionHandler: {
+			DispatchQueue.main.async { [weak self] in
+				self?.scheduleNextLoop()
+			}
+		})
+	}
+	
+	func play() {
+		avPlayer?.play()
+		enginePlayerNode?.play()
+	}
+	
+	func pause() {
+		avPlayer?.pause()
+		enginePlayerNode?.pause()
+	}
+	
+	func stop() {
+		avPlayer?.stop()
+		enginePlayerNode?.stop()
 	}
 }
 
@@ -89,6 +118,7 @@ class AudioEngineManager: ObservableObject {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	let reverbNode = AVAudioUnitReverb()
+	let importedMixer = AVAudioMixerNode()
 	
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
@@ -302,6 +332,8 @@ class AudioEngineManager: ObservableObject {
 		realInhaleBuffer = loadWAV(filename: "REAL_INHALE")
 		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE")
 		clickBuffer = loadWAV(filename: "CLICK")
+		
+		setupAudio()
 		
 		loadTracks()
 		loadAlarmTrack()
@@ -562,19 +594,30 @@ class AudioEngineManager: ObservableObject {
 		
 		do {
 			try fm.copyItem(at: url, to: dest)
-			let player = try AVAudioPlayer(contentsOf: dest)
-			player.numberOfLoops = -1
-			player.prepareToPlay()
 			
 			if isAlarm {
-				alarmPlayer = player
+				alarmPlayer = try AVAudioPlayer(contentsOf: dest)
+				alarmPlayer?.numberOfLoops = -1
+				alarmPlayer?.prepareToPlay()
 				alarmTrackPath = filename
 				alarmTrackIsAppleMusic = false
 				alarmTrackNameStorage = url.lastPathComponent
 			} else {
-				let track = ImportedTrack(name: url.lastPathComponent, player: player, volume: 0.5, isAppleMusic: false, path: filename)
+				let track = ImportedTrack(id: UUID(), name: url.lastPathComponent, volume: 0.5, isAppleMusic: false, path: filename)
+				
+				let pNode = AVAudioPlayerNode()
+				track.enginePlayerNode = pNode
+				
+				if let file = try? AVAudioFile(forReading: dest) {
+					track.audioFile = file
+					engine.attach(pNode)
+					engine.connect(pNode, to: importedMixer, format: file.processingFormat)
+					track.scheduleNextLoop()
+					track.scheduleNextLoop()
+				}
+				
 				track.masterVolume = masterVolume
-				if isPlaying { player.play() }
+				if isPlaying { track.play() }
 				importedTracks.append(track)
 				saveTracks()
 			}
@@ -596,9 +639,10 @@ class AudioEngineManager: ObservableObject {
 					alarmTrackNameStorage = item.title ?? "Unknown Track"
 					break
 				} else {
-					let track = ImportedTrack(name: item.title ?? "Unknown Track", player: player, volume: 0.5, isAppleMusic: true, path: String(item.persistentID))
+					let track = ImportedTrack(name: item.title ?? "Unknown Track", volume: 0.5, isAppleMusic: true, path: String(item.persistentID))
+					track.avPlayer = player
 					track.masterVolume = masterVolume
-					if isPlaying { player.play() }
+					if isPlaying { track.play() }
 					importedTracks.append(track)
 					saveTracks()
 				}
@@ -609,8 +653,14 @@ class AudioEngineManager: ObservableObject {
 	func removeTracks(at offsets: IndexSet) {
 		for index in offsets {
 			let track = importedTracks[index]
-			track.player?.stop()
+			track.stop()
 			if !track.isAppleMusic {
+				if let pNode = track.enginePlayerNode {
+					engine.detach(pNode)
+				}
+				track.enginePlayerNode = nil
+				track.audioFile = nil
+				
 				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 				let fileURL = docs.appendingPathComponent(track.path)
 				try? FileManager.default.removeItem(at: fileURL)
@@ -630,27 +680,42 @@ class AudioEngineManager: ObservableObject {
 	private func loadTracks() {
 		guard let dataList = try? JSONDecoder().decode([TrackData].self, from: savedTracksJSON) else { return }
 		for data in dataList {
-			var player: AVAudioPlayer?
 			if data.isAppleMusic {
 				if let pid = UInt64(data.path) {
 					let query = MPMediaQuery.songs()
 					let predicate = MPMediaPropertyPredicate(value: pid, forProperty: MPMediaItemPropertyPersistentID)
 					query.addFilterPredicate(predicate)
 					if let item = query.items?.first, let url = item.assetURL {
-						player = try? AVAudioPlayer(contentsOf: url)
+						let avPlayer = try? AVAudioPlayer(contentsOf: url)
+						avPlayer?.numberOfLoops = -1
+						avPlayer?.prepareToPlay()
+						
+						let track = ImportedTrack(id: data.id, name: data.name, volume: data.volume, isAppleMusic: true, path: data.path)
+						track.avPlayer = avPlayer
+						track.masterVolume = masterVolume
+						importedTracks.append(track)
 					}
 				}
 			} else {
 				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 				let url = docs.appendingPathComponent(data.path)
-				player = try? AVAudioPlayer(contentsOf: url)
+				
+				let track = ImportedTrack(id: data.id, name: data.name, volume: data.volume, isAppleMusic: false, path: data.path)
+				
+				let pNode = AVAudioPlayerNode()
+				track.enginePlayerNode = pNode
+				
+				if let file = try? AVAudioFile(forReading: url) {
+					track.audioFile = file
+					engine.attach(pNode)
+					engine.connect(pNode, to: importedMixer, format: file.processingFormat)
+					track.scheduleNextLoop()
+					track.scheduleNextLoop()
+				}
+				
+				track.masterVolume = masterVolume
+				importedTracks.append(track)
 			}
-			
-			player?.numberOfLoops = -1
-			player?.prepareToPlay()
-			let track = ImportedTrack(id: data.id, name: data.name, player: player, volume: data.volume, isAppleMusic: data.isAppleMusic, path: data.path)
-			track.masterVolume = masterVolume
-			importedTracks.append(track)
 		}
 	}
 	
@@ -1333,8 +1398,11 @@ class AudioEngineManager: ObservableObject {
 		
 		if let node = sourceNode {
 			engine.attach(node)
+			engine.attach(importedMixer)
 			engine.attach(reverbNode)
+			
 			engine.connect(node, to: reverbNode, format: format)
+			engine.connect(importedMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: engine.mainMixerNode, format: format)
 			updateReverb()
 		}
@@ -1561,7 +1629,7 @@ class AudioEngineManager: ObservableObject {
 			engine.pause()
 			rainPlayer?.pause()
 			organicHeartbeatPlayer?.pause()
-			for track in importedTracks { track.player?.pause() }
+			for track in importedTracks { track.pause() }
 			isPlaying = false
 			sleepTimerStartDate = nil
 			isMorningFadeActive = false
@@ -1580,8 +1648,6 @@ class AudioEngineManager: ObservableObject {
 				try session.setCategory(.playback, mode: .default, options: options)
 				try session.setActive(true)
 				
-				if sourceNode == nil { setupAudio() }
-				
 				resetDynamicBPM()
 				engine.prepare()
 				updateVolumes()
@@ -1598,7 +1664,7 @@ class AudioEngineManager: ObservableObject {
 					guard self.engine.isRunning else { return }
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
-					for track in self.importedTracks { track.player?.play() }
+					for track in self.importedTracks { track.play() }
 					self.isPlaying = true
 					self.updateNowPlaying()
 					UIAccessibility.post(notification: .announcement, argument: "Audio stream active.")
@@ -1666,7 +1732,7 @@ class AudioEngineManager: ObservableObject {
 					try self.engine.start()
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
-					for track in self.importedTracks { track.player?.play() }
+					for track in self.importedTracks { track.play() }
 				} catch {}
 			}
 		}
