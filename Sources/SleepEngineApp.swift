@@ -448,6 +448,7 @@ class AudioEngineManager: ObservableObject {
 			pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
 			guard let channelData = pcmBuffer.floatChannelData?[0] else { return nil }
 			let fadeFrames = Int(sampleRate * 0.3)
+			let gain: Float = 2.5 // Boost real breath PCM data
 			for i in 0..<frameCount {
 				let idx = getPingPongIndex(index: i, count: buffer.count)
 				var env: Float = 1.0
@@ -456,7 +457,7 @@ class AudioEngineManager: ObservableObject {
 				} else if i > frameCount - fadeFrames {
 					env = Float(frameCount - i) / Float(fadeFrames)
 				}
-				let easedEnv = env * env * (3 - 2 * env)
+				let easedEnv = env * env * (3 - 2 * env) * gain
 				channelData[i] = buffer[idx] * easedEnv
 			}
 			try file.write(from: pcmBuffer)
@@ -567,8 +568,9 @@ class AudioEngineManager: ObservableObject {
 		importedMixer.outputVolume = 1.0
 		
 		let baseVoiceVol = Float(masterVolume) * soundscapeMultiplier
-		breathingNode.volume = baseVoiceVol
-		anchorNode.volume = baseVoiceVol * 2.0
+		let realBreathBoost: Float = useRealBreathing ? 4.0 : 1.0
+		breathingNode.volume = baseVoiceVol * realBreathBoost
+		anchorNode.volume = baseVoiceVol * realBreathBoost * 2.0
 		
 		for track in importedTracks {
 			track.masterVolume = masterVolume
@@ -1120,7 +1122,18 @@ class AudioEngineManager: ObservableObject {
 	
 	func simulateNightFadeOut() {
 		simulationTask?.cancel()
-		if !isPlaying { playStop() }
+		
+		if !isPlaying { 
+			isMorningFadeActive = true
+			playStop() 
+			isMorningFadeActive = false
+		}
+		
+		isMeditationActive = false
+		meditationPlayers.forEach { $0.stop() }
+		meditationFadeMultiplier = 1.0
+		postMeditationMultiplier = 1.0
+		
 		dynamicVolumeMultiplier = 1.0
 		var fadeStep = 0
 		let totalSteps = Int(sleepFadeMinutes * 60.0 * 10)
@@ -1784,16 +1797,23 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self, let userInfo = notification.userInfo,
 				  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
 				  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+			
 			if type == .began {
 				if self.isPlaying { self.playStop() }
-				if self.isAlarmOn { 
-					do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
-					self.silentLoopPlayer?.play() 
-				}
 			} else if type == .ended {
 				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
 				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-				if options.contains(.shouldResume) { if !self.isPlaying { self.playStop() } }
+				
+				if options.contains(.shouldResume) { 
+					if !self.isPlaying { self.playStop() } 
+				}
+				
+				if self.isAlarmOn && !self.isPlaying {
+					DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+						do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
+						self.silentLoopPlayer?.play()
+					}
+				}
 			}
 		}
 		
@@ -1801,11 +1821,15 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self, let userInfo = notification.userInfo,
 				  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
+			
 			if reason == .oldDeviceUnavailable {
 				if self.isPlaying { self.playStop() }
-				if self.isAlarmOn { 
-					do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
-					self.silentLoopPlayer?.play() 
+				
+				if self.isAlarmOn {
+					DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+						do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
+						self.silentLoopPlayer?.play()
+					}
 				}
 			}
 		}
