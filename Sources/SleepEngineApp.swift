@@ -449,7 +449,7 @@ class AudioEngineManager: ObservableObject {
 			pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
 			guard let channelData = pcmBuffer.floatChannelData?[0] else { return nil }
 			let fadeFrames = Int(sampleRate * 0.3)
-			let gain: Float = 4.0
+			let gain: Float = 4.0 
 			for i in 0..<frameCount {
 				let idx = getPingPongIndex(index: i, count: buffer.count)
 				var env: Float = 1.0
