@@ -448,7 +448,7 @@ class AudioEngineManager: ObservableObject {
 			pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
 			guard let channelData = pcmBuffer.floatChannelData?[0] else { return nil }
 			let fadeFrames = Int(sampleRate * 0.3)
-			let gain: Float = 2.5 // Boost real breath PCM data
+			let gain: Float = 4.0 // Boost real breath PCM data directly
 			for i in 0..<frameCount {
 				let idx = getPingPongIndex(index: i, count: buffer.count)
 				var env: Float = 1.0
@@ -568,9 +568,8 @@ class AudioEngineManager: ObservableObject {
 		importedMixer.outputVolume = 1.0
 		
 		let baseVoiceVol = Float(masterVolume) * soundscapeMultiplier
-		let realBreathBoost: Float = useRealBreathing ? 4.0 : 1.0
-		breathingNode.volume = baseVoiceVol * realBreathBoost
-		anchorNode.volume = baseVoiceVol * realBreathBoost * 2.0
+		breathingNode.volume = baseVoiceVol
+		anchorNode.volume = baseVoiceVol * 2.0
 		
 		for track in importedTracks {
 			track.masterVolume = masterVolume
@@ -1509,12 +1508,13 @@ class AudioEngineManager: ObservableObject {
 					}
 					var breathSampleL: Float = 0; var breathSampleR: Float = 0
 					if state.useRealBreathing {
+						let realBreathGain: Float = 4.0
 						if usingInhale && !realInhale.isEmpty {
 							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realInhale.count)
-							breathSampleL = realInhale[idx]; breathSampleR = realInhale[idx]
+							breathSampleL = realInhale[idx] * realBreathGain; breathSampleR = realInhale[idx] * realBreathGain
 						} else if usingExhale && !realExhale.isEmpty {
 							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realExhale.count)
-							breathSampleL = realExhale[idx]; breathSampleR = realExhale[idx]
+							breathSampleL = realExhale[idx] * realBreathGain; breathSampleR = realExhale[idx] * realBreathGain
 						}
 					} else {
 						breathSampleL = breathL[idxNoise]; breathSampleR = breathR[idxNoise]
