@@ -1508,7 +1508,7 @@ class AudioEngineManager: ObservableObject {
 					}
 					var breathSampleL: Float = 0; var breathSampleR: Float = 0
 					if state.useRealBreathing {
-						let realBreathGain: Float = 4.0
+						let realBreathGain: Float = 4.0 // Scale background breaths safely here
 						if usingInhale && !realInhale.isEmpty {
 							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realInhale.count)
 							breathSampleL = realInhale[idx] * realBreathGain; breathSampleR = realInhale[idx] * realBreathGain
@@ -1797,23 +1797,16 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self, let userInfo = notification.userInfo,
 				  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
 				  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-			
 			if type == .began {
 				if self.isPlaying { self.playStop() }
+				if self.isAlarmOn { 
+					do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
+					self.silentLoopPlayer?.play() 
+				}
 			} else if type == .ended {
 				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
 				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-				
-				if options.contains(.shouldResume) { 
-					if !self.isPlaying { self.playStop() } 
-				}
-				
-				if self.isAlarmOn && !self.isPlaying {
-					DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-						do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
-						self.silentLoopPlayer?.play()
-					}
-				}
+				if options.contains(.shouldResume) { if !self.isPlaying { self.playStop() } }
 			}
 		}
 		
@@ -1821,15 +1814,11 @@ class AudioEngineManager: ObservableObject {
 			guard let self = self, let userInfo = notification.userInfo,
 				  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-			
 			if reason == .oldDeviceUnavailable {
 				if self.isPlaying { self.playStop() }
-				
-				if self.isAlarmOn {
-					DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-						do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
-						self.silentLoopPlayer?.play()
-					}
+				if self.isAlarmOn { 
+					do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
+					self.silentLoopPlayer?.play() 
 				}
 			}
 		}
