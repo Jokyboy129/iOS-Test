@@ -60,7 +60,7 @@ class ImportedTrack: Identifiable, ObservableObject {
 		}
 		
 		if enginePlayerNode != nil {
-			let engineVol = Float(volume * masterVolume) * Float(specificMultiplier)
+			let engineVol = Float(volume * masterVolume * dynamicVolumeMultiplier * specificMultiplier)
 			enginePlayerNode?.volume = engineVol
 		}
 	}
@@ -220,7 +220,14 @@ class AudioEngineManager: ObservableObject {
 	
 	@Published var savedTracksJSON: Data { didSet { save("savedTracksJSON", savedTracksJSON) } }
 	
-	@Published var enableSleepTimer: Bool { didSet { save("enableSleepTimer", enableSleepTimer) } }
+	@Published var enableSleepTimer: Bool { 
+		didSet { 
+			save("enableSleepTimer", enableSleepTimer) 
+			if enableSleepTimer && isPlaying && sleepTimerStartDate == nil {
+				sleepTimerStartDate = Date()
+			}
+		} 
+	}
 	@Published var sleepTimerHours: Double { didSet { save("sleepTimerHours", sleepTimerHours) } }
 	@Published var sleepFadeMinutes: Double { didSet { save("sleepFadeMinutes", sleepFadeMinutes) } }
 	
@@ -556,7 +563,7 @@ class AudioEngineManager: ObservableObject {
 			organicHeartbeatPlayer?.volume = targetOrgVol
 		}
 		
-		importedMixer.outputVolume = Float(dynamicVolumeMultiplier)
+		importedMixer.outputVolume = 1.0
 		
 		let baseVoiceVol = Float(masterVolume) * soundscapeMultiplier
 		breathingNode.volume = baseVoiceVol
@@ -882,9 +889,6 @@ class AudioEngineManager: ObservableObject {
 					engine.attach(alarmNode)
 				}
 				engine.connect(alarmNode, to: alarmMixer, format: file.processingFormat)
-				alarmNode.scheduleFile(file, at: nil) { [weak self] in
-					self?.loopAlarmNode(file: file)
-				}
 			}
 		} else {
 			alarmAvPlayer = try? AVAudioPlayer(contentsOf: url)
@@ -1020,9 +1024,25 @@ class AudioEngineManager: ObservableObject {
 		isAlarmRinging = true
 		do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
 		
+		if !engine.isRunning {
+			try? engine.start()
+		}
+		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
 			alarmMixer.outputVolume = 0.0
-			alarmNode.play()
+			
+			let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+			let url = docs.appendingPathComponent(alarmTrackPath)
+			if let file = try? AVAudioFile(forReading: url) {
+				alarmNode.stop()
+				alarmNode.scheduleFile(file, at: nil) { [weak self] in
+					self?.loopAlarmNode(file: file)
+				}
+				alarmNode.scheduleFile(file, at: nil) { [weak self] in
+					self?.loopAlarmNode(file: file)
+				}
+				alarmNode.play()
+			}
 		} else {
 			alarmAvPlayer?.volume = 0.0
 			alarmAvPlayer?.play()
@@ -1693,7 +1713,7 @@ class AudioEngineManager: ObservableObject {
 				
 				engine.prepare()
 				
-				if !meditationPlayers.isEmpty {
+				if !meditationPlayers.isEmpty && !isMorningFadeActive {
 					isMeditationActive = true
 					currentMeditationIndex = 0
 					meditationElapsedTime = 0
@@ -1704,6 +1724,7 @@ class AudioEngineManager: ObservableObject {
 					isMeditationActive = false
 					meditationFadeMultiplier = 1.0
 					postMeditationMultiplier = 1.0
+					postMeditationPhase = false
 				}
 				
 				updateVolumes()
