@@ -236,6 +236,7 @@ class AudioEngineManager: ObservableObject {
 	
 	var sleepTimerStartDate: Date?
 	var isMorningFadeActive = false
+	var isSimulatingNightFade = false
 	
 	@Published var alarmTimeRef: Double { didSet { save("alarmTimeRef", alarmTimeRef) } }
 	@Published var alarmTime: Date { didSet { alarmTimeRef = alarmTime.timeIntervalSince1970 } }
@@ -448,7 +449,7 @@ class AudioEngineManager: ObservableObject {
 			pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
 			guard let channelData = pcmBuffer.floatChannelData?[0] else { return nil }
 			let fadeFrames = Int(sampleRate * 0.3)
-			let gain: Float = 4.0 // Boost real breath PCM data directly
+			let gain: Float = 4.0
 			for i in 0..<frameCount {
 				let idx = getPingPongIndex(index: i, count: buffer.count)
 				var env: Float = 1.0
@@ -1121,18 +1122,9 @@ class AudioEngineManager: ObservableObject {
 	
 	func simulateNightFadeOut() {
 		simulationTask?.cancel()
-		
-		if !isPlaying { 
-			isMorningFadeActive = true
-			playStop() 
-			isMorningFadeActive = false
-		}
-		
-		isMeditationActive = false
-		meditationPlayers.forEach { $0.stop() }
-		meditationFadeMultiplier = 1.0
-		postMeditationMultiplier = 1.0
-		
+		isSimulatingNightFade = true
+		if !isPlaying { playStop() }
+		isSimulatingNightFade = false
 		dynamicVolumeMultiplier = 1.0
 		var fadeStep = 0
 		let totalSteps = Int(sleepFadeMinutes * 60.0 * 10)
@@ -1508,13 +1500,13 @@ class AudioEngineManager: ObservableObject {
 					}
 					var breathSampleL: Float = 0; var breathSampleR: Float = 0
 					if state.useRealBreathing {
-						let realBreathGain: Float = 4.0 // Scale background breaths safely here
+						let realGain: Float = 4.0
 						if usingInhale && !realInhale.isEmpty {
 							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realInhale.count)
-							breathSampleL = realInhale[idx] * realBreathGain; breathSampleR = realInhale[idx] * realBreathGain
+							breathSampleL = realInhale[idx] * realGain; breathSampleR = realInhale[idx] * realGain
 						} else if usingExhale && !realExhale.isEmpty {
 							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realExhale.count)
-							breathSampleL = realExhale[idx] * realBreathGain; breathSampleR = realExhale[idx] * realBreathGain
+							breathSampleL = realExhale[idx] * realGain; breathSampleR = realExhale[idx] * realGain
 						}
 					} else {
 						breathSampleL = breathL[idxNoise]; breathSampleR = breathR[idxNoise]
@@ -1732,7 +1724,7 @@ class AudioEngineManager: ObservableObject {
 				
 				engine.prepare()
 				
-				if !meditationPlayers.isEmpty && !isMorningFadeActive {
+				if !meditationPlayers.isEmpty && !isMorningFadeActive && !isSimulatingNightFade {
 					isMeditationActive = true
 					currentMeditationIndex = 0
 					meditationElapsedTime = 0
