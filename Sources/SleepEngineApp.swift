@@ -52,11 +52,7 @@ class ImportedTrack: Identifiable, ObservableObject {
 		
 		if avPlayer != nil {
 			let avVol = Float(volume * masterVolume * dynamicVolumeMultiplier * specificMultiplier)
-			if avPlayer?.isPlaying == true {
-				avPlayer?.setVolume(avVol, fadeDuration: 0.1)
-			} else {
-				avPlayer?.volume = avVol
-			}
+			avPlayer?.volume = avVol
 		}
 		
 		if enginePlayerNode != nil {
@@ -373,8 +369,8 @@ class AudioEngineManager: ObservableObject {
 		applyAudioSessionSettings()
 		setupOrganicPlayers()
 		
-		realInhaleBuffer = loadWAV(filename: "REAL_INHALE")
-		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE")
+		realInhaleBuffer = loadWAV(filename: "REAL_INHALE").map { $0 * 4.0 }
+		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE").map { $0 * 4.0 }
 		clickBuffer = loadWAV(filename: "CLICK")
 		
 		setupAudio()
@@ -551,18 +547,10 @@ class AudioEngineManager: ObservableObject {
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
 		
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
-		if rainPlayer?.isPlaying == true {
-			rainPlayer?.setVolume(targetRainVol, fadeDuration: 0.1)
-		} else {
-			rainPlayer?.volume = targetRainVol
-		}
+		rainPlayer?.volume = targetRainVol
 		
 		let targetOrgVol = Float(organicHeartbeatVolume * masterVolume) * soundscapeMultiplier
-		if organicHeartbeatPlayer?.isPlaying == true {
-			organicHeartbeatPlayer?.setVolume(targetOrgVol, fadeDuration: 0.1)
-		} else {
-			organicHeartbeatPlayer?.volume = targetOrgVol
-		}
+		organicHeartbeatPlayer?.volume = targetOrgVol
 		
 		importedMixer.outputVolume = 1.0
 		
