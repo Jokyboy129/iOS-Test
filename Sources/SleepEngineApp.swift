@@ -245,6 +245,7 @@ class AudioEngineManager: ObservableObject {
 	@Published var alarmTrackIsAppleMusic: Bool { didSet { save("alarmTrackIsAppleMusic", alarmTrackIsAppleMusic) } }
 	@Published var alarmTrackNameStorage: String { didSet { save("alarmTrackNameStorage", alarmTrackNameStorage) } }
 	var alarmAvPlayer: AVAudioPlayer?
+	var alarmAudioFile: AVAudioFile?
 	
 	@Published var meditationPaths: [String] { didSet { save("meditationPaths", meditationPaths) } }
 	@Published var meditationIsAppleMusic: Bool { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
@@ -885,6 +886,7 @@ class AudioEngineManager: ObservableObject {
 		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
 			if let file = try? AVAudioFile(forReading: url) {
+				alarmAudioFile = file
 				if alarmNode.engine == nil {
 					engine.attach(alarmNode)
 				}
@@ -1022,6 +1024,12 @@ class AudioEngineManager: ObservableObject {
 	func triggerAlarm(fadeDuration: Double = 60.0) {
 		isAlarmOn = false
 		isAlarmRinging = true
+		
+		isMeditationActive = false
+		meditationPlayers.forEach { $0.stop() }
+		meditationFadeMultiplier = 1.0
+		postMeditationMultiplier = 1.0
+		
 		do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
 		
 		if !engine.isRunning {
@@ -1030,10 +1038,7 @@ class AudioEngineManager: ObservableObject {
 		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
 			alarmMixer.outputVolume = 0.0
-			
-			let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-			let url = docs.appendingPathComponent(alarmTrackPath)
-			if let file = try? AVAudioFile(forReading: url) {
+			if let file = alarmAudioFile {
 				alarmNode.stop()
 				alarmNode.scheduleFile(file, at: nil) { [weak self] in
 					self?.loopAlarmNode(file: file)
@@ -1077,11 +1082,11 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	func stopAlarm() {
+		isAlarmRinging = false
 		alarmAvPlayer?.stop()
 		alarmAvPlayer?.currentTime = 0
 		alarmNode.stop()
 		alarmMixer.outputVolume = 1.0
-		isAlarmRinging = false
 		fadeTimer?.invalidate()
 		
 		if isPlaying {
@@ -1154,6 +1159,7 @@ class AudioEngineManager: ObservableObject {
 	
 	func simulateAlarmFading() {
 		simulationTask?.cancel()
+		isMorningFadeActive = true
 		if !isPlaying { playStop() }
 		dynamicVolumeMultiplier = 1.0
 		isMorningFadeActive = false
