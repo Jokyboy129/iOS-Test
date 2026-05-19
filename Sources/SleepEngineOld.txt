@@ -60,7 +60,7 @@ class ImportedTrack: Identifiable, ObservableObject {
 		}
 		
 		if enginePlayerNode != nil {
-			let engineVol = Float(volume * masterVolume * dynamicVolumeMultiplier * specificMultiplier)
+			let engineVol = Float(volume * masterVolume) * Float(specificMultiplier)
 			enginePlayerNode?.volume = engineVol
 		}
 	}
@@ -220,14 +220,7 @@ class AudioEngineManager: ObservableObject {
 	
 	@Published var savedTracksJSON: Data { didSet { save("savedTracksJSON", savedTracksJSON) } }
 	
-	@Published var enableSleepTimer: Bool { 
-		didSet { 
-			save("enableSleepTimer", enableSleepTimer) 
-			if enableSleepTimer && isPlaying && sleepTimerStartDate == nil {
-				sleepTimerStartDate = Date()
-			}
-		} 
-	}
+	@Published var enableSleepTimer: Bool { didSet { save("enableSleepTimer", enableSleepTimer) } }
 	@Published var sleepTimerHours: Double { didSet { save("sleepTimerHours", sleepTimerHours) } }
 	@Published var sleepFadeMinutes: Double { didSet { save("sleepFadeMinutes", sleepFadeMinutes) } }
 	
@@ -245,7 +238,6 @@ class AudioEngineManager: ObservableObject {
 	@Published var alarmTrackIsAppleMusic: Bool { didSet { save("alarmTrackIsAppleMusic", alarmTrackIsAppleMusic) } }
 	@Published var alarmTrackNameStorage: String { didSet { save("alarmTrackNameStorage", alarmTrackNameStorage) } }
 	var alarmAvPlayer: AVAudioPlayer?
-	var alarmAudioFile: AVAudioFile?
 	
 	@Published var meditationPaths: [String] { didSet { save("meditationPaths", meditationPaths) } }
 	@Published var meditationIsAppleMusic: Bool { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
@@ -564,7 +556,7 @@ class AudioEngineManager: ObservableObject {
 			organicHeartbeatPlayer?.volume = targetOrgVol
 		}
 		
-		importedMixer.outputVolume = 1.0
+		importedMixer.outputVolume = Float(dynamicVolumeMultiplier)
 		
 		let baseVoiceVol = Float(masterVolume) * soundscapeMultiplier
 		breathingNode.volume = baseVoiceVol
@@ -886,11 +878,13 @@ class AudioEngineManager: ObservableObject {
 		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
 			if let file = try? AVAudioFile(forReading: url) {
-				alarmAudioFile = file
 				if alarmNode.engine == nil {
 					engine.attach(alarmNode)
 				}
 				engine.connect(alarmNode, to: alarmMixer, format: file.processingFormat)
+				alarmNode.scheduleFile(file, at: nil) { [weak self] in
+					self?.loopAlarmNode(file: file)
+				}
 			}
 		} else {
 			alarmAvPlayer = try? AVAudioPlayer(contentsOf: url)
@@ -1024,30 +1018,11 @@ class AudioEngineManager: ObservableObject {
 	func triggerAlarm(fadeDuration: Double = 60.0) {
 		isAlarmOn = false
 		isAlarmRinging = true
-		
-		isMeditationActive = false
-		meditationPlayers.forEach { $0.stop() }
-		meditationFadeMultiplier = 1.0
-		postMeditationMultiplier = 1.0
-		
 		do { try AVAudioSession.sharedInstance().setActive(true) } catch {}
-		
-		if !engine.isRunning {
-			try? engine.start()
-		}
 		
 		if alarmInReverb && !alarmTrackIsAppleMusic {
 			alarmMixer.outputVolume = 0.0
-			if let file = alarmAudioFile {
-				alarmNode.stop()
-				alarmNode.scheduleFile(file, at: nil) { [weak self] in
-					self?.loopAlarmNode(file: file)
-				}
-				alarmNode.scheduleFile(file, at: nil) { [weak self] in
-					self?.loopAlarmNode(file: file)
-				}
-				alarmNode.play()
-			}
+			alarmNode.play()
 		} else {
 			alarmAvPlayer?.volume = 0.0
 			alarmAvPlayer?.play()
@@ -1082,11 +1057,11 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	func stopAlarm() {
-		isAlarmRinging = false
 		alarmAvPlayer?.stop()
 		alarmAvPlayer?.currentTime = 0
 		alarmNode.stop()
 		alarmMixer.outputVolume = 1.0
+		isAlarmRinging = false
 		fadeTimer?.invalidate()
 		
 		if isPlaying {
@@ -1159,7 +1134,6 @@ class AudioEngineManager: ObservableObject {
 	
 	func simulateAlarmFading() {
 		simulationTask?.cancel()
-		isMorningFadeActive = true
 		if !isPlaying { playStop() }
 		dynamicVolumeMultiplier = 1.0
 		isMorningFadeActive = false
@@ -1719,7 +1693,7 @@ class AudioEngineManager: ObservableObject {
 				
 				engine.prepare()
 				
-				if !meditationPlayers.isEmpty && !isMorningFadeActive {
+				if !meditationPlayers.isEmpty {
 					isMeditationActive = true
 					currentMeditationIndex = 0
 					meditationElapsedTime = 0
@@ -1730,7 +1704,6 @@ class AudioEngineManager: ObservableObject {
 					isMeditationActive = false
 					meditationFadeMultiplier = 1.0
 					postMeditationMultiplier = 1.0
-					postMeditationPhase = false
 				}
 				
 				updateVolumes()
