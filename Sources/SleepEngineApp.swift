@@ -103,6 +103,8 @@ struct AudioRenderState {
 	var brownVolume: Float = 0
 	var breathVolume: Float = 0
 	var clickVolume: Float = 0
+	var binauralVolume: Float = 0
+	var binauralTypeIndex: Int = 0
 	var panHeartIndex: Int = 0
 	var panClockIndex: Int = 0
 	var panBrownIndex: Int = 0
@@ -114,6 +116,7 @@ struct AudioRenderState {
 	var enableSlowdown: Bool = false
 	var targetBPM: Double = 40.0
 	var slowdownMinutes: Double = 30.0
+	var enableRSA: Bool = false
 	var syncBreathing: Bool = false
 	var useRealBreathing: Bool = true
 	var isBreathing: Bool = false
@@ -166,6 +169,7 @@ class AudioEngineManager: ObservableObject {
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
 	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
 	let reverbOptions = ["Dry / No Reverb", "Small Room", "Medium Hall", "Large Hall", "Cathedral"]
+	let binauralOptions = ["Delta Waves (2Hz - Deep Sleep)", "Theta Waves (6Hz - Dreaming)", "Alpha Waves (10Hz - Relaxation)"]
 	
 	private var renderState = AudioRenderState()
 	
@@ -178,6 +182,7 @@ class AudioEngineManager: ObservableObject {
 	@Published var brownVolume: Double { didSet { save("brownVolume", brownVolume); syncRenderState() } }
 	@Published var breathVolume: Double { didSet { save("breathVolume", breathVolume); syncRenderState() } }
 	@Published var clickVolume: Double { didSet { save("clickVolume", clickVolume); syncRenderState() } }
+	@Published var binauralVolume: Double { didSet { save("binauralVolume", binauralVolume); syncRenderState() } }
 	
 	@Published var rainVolume: Double { didSet { save("rainVolume", rainVolume); updateVolumes() } }
 	@Published var organicHeartbeatVolume: Double { didSet { save("organicHeartbeatVolume", organicHeartbeatVolume); updateVolumes() } }
@@ -189,8 +194,10 @@ class AudioEngineManager: ObservableObject {
 	@Published var panClickIndex: Int { didSet { save("panClickIndex", panClickIndex); syncRenderState() } }
 	
 	@Published var clockTypeIndex: Int { didSet { save("clockTypeIndex", clockTypeIndex); rebuildPrototypes(); syncRenderState() } }
+	@Published var binauralTypeIndex: Int { didSet { save("binauralTypeIndex", binauralTypeIndex); syncRenderState() } }
 	@Published var syncClock: Bool { didSet { save("syncClock", syncClock); syncRenderState() } }
 	@Published var syncClick: Bool { didSet { save("syncClick", syncClick); syncRenderState() } }
+	@Published var enableRSA: Bool { didSet { save("enableRSA", enableRSA); syncRenderState() } }
 	
 	@Published var mixWithOthers: Bool { didSet { save("mixWithOthers", mixWithOthers); applyAudioSessionSettings() } }
 	@Published var useWhisper: Bool { didSet { save("useWhisper", useWhisper) } }
@@ -202,6 +209,7 @@ class AudioEngineManager: ObservableObject {
 	@Published var voiceInReverb: Bool { didSet { save("voiceInReverb", voiceInReverb); updateVoiceRouting() } }
 	@Published var importedAudioInReverb: Bool { didSet { save("importedAudioInReverb", importedAudioInReverb); reloadImportedTracksRouting() } }
 	@Published var enableHSPMode: Bool { didSet { save("enableHSPMode", enableHSPMode); updateHSPMode() } }
+	@Published var enableDeepSleepDive: Bool { didSet { save("enableDeepSleepDive", enableDeepSleepDive) } }
 	
 	@Published var enableSlowdown: Bool { didSet { save("enableSlowdown", enableSlowdown); syncRenderState() } }
 	@Published var targetBPM: Double { didSet { save("targetBPM", targetBPM); syncRenderState() } }
@@ -277,6 +285,10 @@ class AudioEngineManager: ObservableObject {
 	private var smoothedVBrown: Float = 0.0
 	private var smoothedVBreath: Float = 0.0
 	private var smoothedVClick: Float = 0.0
+	private var smoothedVBinaural: Float = 0.0
+	
+	private var binauralPhaseL: Double = 0.0
+	private var binauralPhaseR: Double = 0.0
 	
 	private var breathFrameCounter: Int = 0
 	private var lastManualState: Int = 0
@@ -297,6 +309,7 @@ class AudioEngineManager: ObservableObject {
 		self.brownVolume = ud.double(forKey: "brownVolume")
 		self.breathVolume = ud.double(forKey: "breathVolume")
 		self.clickVolume = ud.double(forKey: "clickVolume")
+		self.binauralVolume = ud.double(forKey: "binauralVolume")
 		self.rainVolume = ud.double(forKey: "rainVolume")
 		self.organicHeartbeatVolume = ud.double(forKey: "organicHeartbeatVolume")
 		
@@ -307,8 +320,11 @@ class AudioEngineManager: ObservableObject {
 		self.panClickIndex = ud.integer(forKey: "panClickIndex")
 		
 		self.clockTypeIndex = ud.integer(forKey: "clockTypeIndex")
+		self.binauralTypeIndex = ud.integer(forKey: "binauralTypeIndex")
 		self.syncClock = ud.bool(forKey: "syncClock")
 		self.syncClick = ud.object(forKey: "syncClick") == nil ? true : ud.bool(forKey: "syncClick")
+		self.enableRSA = ud.bool(forKey: "enableRSA")
+		
 		self.mixWithOthers = ud.bool(forKey: "mixWithOthers")
 		self.useWhisper = ud.bool(forKey: "useWhisper")
 		self.useRealBreathing = ud.object(forKey: "useRealBreathing") == nil ? true : ud.bool(forKey: "useRealBreathing")
@@ -319,6 +335,7 @@ class AudioEngineManager: ObservableObject {
 		self.voiceInReverb = ud.object(forKey: "voiceInReverb") == nil ? false : ud.bool(forKey: "voiceInReverb")
 		self.importedAudioInReverb = ud.object(forKey: "importedAudioInReverb") == nil ? false : ud.bool(forKey: "importedAudioInReverb")
 		self.enableHSPMode = ud.bool(forKey: "enableHSPMode")
+		self.enableDeepSleepDive = ud.bool(forKey: "enableDeepSleepDive")
 		
 		self.enableSlowdown = ud.bool(forKey: "enableSlowdown")
 		self.targetBPM = ud.object(forKey: "targetBPM") == nil ? 40.0 : ud.double(forKey: "targetBPM")
@@ -336,7 +353,7 @@ class AudioEngineManager: ObservableObject {
 		self.meditationNameStorage = ud.string(forKey: "meditationNameStorage") ?? "None"
 		
 		hspEqNode.bands[0].filterType = .lowPass
-		hspEqNode.bands[0].frequency = 2500.0
+		hspEqNode.bands[0].frequency = enableHSPMode ? 2500.0 : 20000.0
 		hspEqNode.bands[0].bypass = !self.enableHSPMode
 		
 		syncRenderState()
@@ -373,6 +390,8 @@ class AudioEngineManager: ObservableObject {
 		newState.brownVolume = Float(self.brownVolume)
 		newState.breathVolume = Float(self.breathVolume)
 		newState.clickVolume = Float(self.clickVolume)
+		newState.binauralVolume = Float(self.binauralVolume)
+		newState.binauralTypeIndex = self.binauralTypeIndex
 		newState.panHeartIndex = self.panHeartIndex
 		newState.panClockIndex = self.panClockIndex
 		newState.panBrownIndex = self.panBrownIndex
@@ -384,6 +403,7 @@ class AudioEngineManager: ObservableObject {
 		newState.enableSlowdown = self.enableSlowdown
 		newState.targetBPM = self.targetBPM
 		newState.slowdownMinutes = self.slowdownMinutes
+		newState.enableRSA = self.enableRSA
 		newState.syncBreathing = self.syncBreathing
 		newState.useRealBreathing = self.useRealBreathing
 		newState.isBreathing = self.isBreathing
@@ -499,6 +519,11 @@ class AudioEngineManager: ObservableObject {
 	
 	func updateHSPMode() {
 		hspEqNode.bands[0].bypass = !enableHSPMode
+		if enableHSPMode {
+			hspEqNode.bands[0].frequency = 2500.0
+		} else {
+			hspEqNode.bands[0].frequency = 20000.0
+		}
 	}
 	
 	func updateVoiceRouting() {
@@ -558,6 +583,9 @@ class AudioEngineManager: ObservableObject {
 		smoothedVBrown = 0.0
 		smoothedVBreath = 0.0
 		smoothedVClick = 0.0
+		smoothedVBinaural = 0.0
+		binauralPhaseL = 0.0
+		binauralPhaseR = 0.0
 		breathFrameCounter = 0
 		lastManualState = 0
 		lastPhaseBeat = -1
@@ -841,6 +869,9 @@ class AudioEngineManager: ObservableObject {
 			}
 		}
 		
+		var targetCutoff: Float = enableHSPMode ? 2500.0 : 20000.0
+		var shouldBypassEQ = !enableHSPMode
+		
 		if enableSleepTimer, let start = sleepTimerStartDate, isPlaying {
 			let elapsed = now.timeIntervalSince(start)
 			let playTime = sleepTimerHours * 3600.0
@@ -848,13 +879,24 @@ class AudioEngineManager: ObservableObject {
 			
 			if elapsed >= playTime + fadeTime {
 				dynamicVolumeMultiplier = 0.0
+				if enableDeepSleepDive { targetCutoff = 400.0; shouldBypassEQ = false }
 				stopSoundscape(keepEngineAlive: false)
 			} else if elapsed >= playTime {
-				dynamicVolumeMultiplier = 1.0 - ((elapsed - playTime) / fadeTime)
+				let progress = (elapsed - playTime) / fadeTime
+				dynamicVolumeMultiplier = 1.0 - progress
+				if enableDeepSleepDive {
+					let startFreq = enableHSPMode ? 2500.0 : 20000.0
+					targetCutoff = Float(startFreq - (startFreq - 400.0) * progress)
+					shouldBypassEQ = false
+				}
 			} else {
 				dynamicVolumeMultiplier = 1.0
+				if enableDeepSleepDive { shouldBypassEQ = false }
 			}
 		}
+		
+		hspEqNode.bands[0].frequency = targetCutoff
+		hspEqNode.bands[0].bypass = shouldBypassEQ
 	}
 	
 	func stopSoundscape(keepEngineAlive: Bool) {
@@ -1029,7 +1071,9 @@ class AudioEngineManager: ObservableObject {
 			if nNoise == 0 || nBeat == 0 { return noErr }
 			
 			let targetVHeart = state.heartbeatVolume; let targetVClock = state.clockVolume
-			let targetVBrown = state.brownVolume; let targetVBreath = state.breathVolume; let targetVClick = state.clickVolume
+			let targetVBrown = state.brownVolume; let targetVBreath = state.breathVolume
+			let targetVClick = state.clickVolume; let targetVBinaural = state.binauralVolume
+			
 			let smoothFactor: Float = 0.005
 			let dt = 1.0 / self.sampleRate
 			let bpmDropRate = state.enableSlowdown ? ((self.startBPM - state.targetBPM) / (state.slowdownMinutes * 60.0 * self.sampleRate)) : 0.0
@@ -1042,17 +1086,23 @@ class AudioEngineManager: ObservableObject {
 				self.smoothedVBrown += (targetVBrown - self.smoothedVBrown) * smoothFactor
 				self.smoothedVBreath += (targetVBreath - self.smoothedVBreath) * smoothFactor
 				self.smoothedVClick += (targetVClick - self.smoothedVClick) * smoothFactor
+				self.smoothedVBinaural += (targetVBinaural - self.smoothedVBinaural) * smoothFactor
 				
 				let vHeart = self.smoothedVHeart; let vClock = self.smoothedVClock; let vBrown = self.smoothedVBrown
-				let vBreath = self.smoothedVBreath; let vClick = self.smoothedVClick
-				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2) + (vClick * 0.3)
+				let vBreath = self.smoothedVBreath; let vClick = self.smoothedVClick; let vBinaural = self.smoothedVBinaural
+				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vBinaural * 0.4)
 
 				let currentFrame = self.frameIdx + frame
 				let timeInSeconds = Double(currentFrame) / self.sampleRate
 				let tChunk = Float(timeInSeconds)
 				
 				var hL: Float = 0; var hR: Float = 0; var flowEnv: Float = 0
-				var beatDuration = 60.0 / self.currentDynamicBPM
+				
+				var actualBPM = self.currentDynamicBPM
+				if state.enableRSA {
+					actualBPM += sin(2.0 * Double.pi * timeInSeconds / 6.0) * 4.0
+				}
+				var beatDuration = 60.0 / actualBPM
 				
 				if state.enableSlowdown {
 					if bpmDropRate > 0 && self.currentDynamicBPM > state.targetBPM {
@@ -1062,7 +1112,12 @@ class AudioEngineManager: ObservableObject {
 						self.currentDynamicBPM -= bpmDropRate
 						if self.currentDynamicBPM > state.targetBPM { self.currentDynamicBPM = state.targetBPM }
 					}
-					beatDuration = 60.0 / self.currentDynamicBPM; self.tBeat += dt
+					
+					actualBPM = self.currentDynamicBPM
+					if state.enableRSA { actualBPM += sin(2.0 * Double.pi * timeInSeconds / 6.0) * 4.0 }
+					beatDuration = 60.0 / actualBPM
+					self.tBeat += dt
+					
 					let clockType = self.clockOptions[state.clockTypeIndex]
 					let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
 					
@@ -1128,9 +1183,9 @@ class AudioEngineManager: ObservableObject {
 					}
 					flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
 				} else {
-					let idxBeat = currentFrame % nBeat
-					if idxBeat == 0 {
-						self.beatCounter += 1; self.clkPlayIdx = 0
+					self.tBeat += dt
+					if self.tBeat >= beatDuration {
+						self.tBeat -= beatDuration; self.beatCounter += 1; self.clkPlayIdx = 0
 						if state.syncClick { self.clickPlayIdx = 0 }
 						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						if state.syncBreathing && !state.isBreathing {
@@ -1148,13 +1203,52 @@ class AudioEngineManager: ObservableObject {
 							}
 						}
 					}
-					let dubStartIdx = Int(config.dubDelay * self.sampleRate)
-					if idxBeat == dubStartIdx { DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) } }
+					
+					let t = self.tBeat; let atk = 0.04; let rel = 0.02
+					var lEnv = exp(-config.lubDecay * t); var slEnv = exp(-config.subDecay * t)
+					if t < atk {
+						let attackCurve = pow(sin((Double.pi / 2.0) * t / atk), 2)
+						lEnv *= attackCurve; slEnv *= attackCurve
+					}
+					if t > beatDuration - rel {
+						let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
+						lEnv *= releaseCurve; slEnv *= releaseCurve
+					}
+					let subLub = sin(2 * Double.pi * config.subFreq * t) * slEnv * config.subVol
+					let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
+					let lub = sin(lubPhase) * lEnv
+					
+					var dEnv = 0.0; var sdEnv = 0.0; var subDub = 0.0; var dub = 0.0
+					if t >= config.dubDelay {
+						let tAct = t - config.dubDelay
+						dEnv = exp(-config.dubDecay * tAct); sdEnv = exp(-config.subDecay * tAct)
+						if tAct < atk {
+							let attackCurve = pow(sin((Double.pi / 2.0) * tAct / atk), 2)
+							dEnv *= attackCurve; sdEnv *= attackCurve
+						}
+						if t > beatDuration - rel {
+							let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
+							dEnv *= releaseCurve; sdEnv *= releaseCurve
+						}
+						subDub = sin(2 * Double.pi * config.subFreq * t) * sdEnv * config.subVol * 0.85
+						let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
+						dub = sin(dubPhase) * dEnv
+					}
+					
+					let combinedLub = Float((lub + subLub) * 0.8); let combinedDub = Float((dub + subDub) * 0.8)
+					if placement == "Center Beats & Flow" {
+						hL = (combinedLub + combinedDub) * 0.85; hR = (combinedLub + combinedDub) * 0.85
+					} else if placement == "Lub Left Ear / Dub Right Ear" {
+						hL = combinedLub; hR = combinedDub
+					} else {
+						hL = combinedDub; hR = combinedLub
+					}
+					flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
+					
+					if t >= config.dubDelay && t - dt < config.dubDelay { DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) } }
 					let clockType = self.clockOptions[state.clockTypeIndex]
-					let halfBeat = nBeat / 2
-					if clockType == "Pocket Watch" && idxBeat == halfBeat { self.clkPlayIdx2 = 0 }
-					hL = lubL[idxBeat] + dubL[idxBeat]; hR = lubR[idxBeat] + dubR[idxBeat]
-					flowEnv = 0.6 + 0.4 * (lubEnv[idxBeat] + dubEnv[idxBeat])
+					let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
+					if ticksPerBeat == 2 && t >= (beatDuration / 2.0) && t - dt < (beatDuration / 2.0) { self.clkPlayIdx2 = 0 }
 				}
 				
 				if !state.syncClick && currentFrame % Int(self.sampleRate) == 0 { self.clickPlayIdx = 0 }
@@ -1192,12 +1286,24 @@ class AudioEngineManager: ObservableObject {
 					chunkBL = pannedB.0; chunkBR = pannedB.1
 				}
 				
+				var chunkBinL: Float = 0; var chunkBinR: Float = 0
+				if vBinaural > 0 {
+					let baseFreq = 150.0
+					let beatFreq = state.binauralTypeIndex == 0 ? 2.0 : (state.binauralTypeIndex == 1 ? 6.0 : 10.0)
+					self.binauralPhaseL += 2.0 * Double.pi * baseFreq * dt
+					self.binauralPhaseR += 2.0 * Double.pi * (baseFreq + beatFreq) * dt
+					if self.binauralPhaseL > 2.0 * Double.pi { self.binauralPhaseL -= 2.0 * Double.pi }
+					if self.binauralPhaseR > 2.0 * Double.pi { self.binauralPhaseR -= 2.0 * Double.pi }
+					chunkBinL = Float(sin(self.binauralPhaseL)) * vBinaural * 0.4
+					chunkBinR = Float(sin(self.binauralPhaseR)) * vBinaural * 0.4
+				}
+				
 				var chunkBrL: Float = 0; var chunkBrR: Float = 0
 				if vBreath > 0 && !state.isBreathing {
 					var breathEnv: Float = 0; var sampleIdxForRealBreath = 0; var usingInhale = false; var usingExhale = false
 					if state.syncBreathing {
 						let syncPhase: Double
-						if state.enableSlowdown { syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration) }
+						if state.enableSlowdown || state.enableRSA { syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration) }
 						else { let beatRatio = Double(currentFrame % nBeat) / Double(nBeat); syncPhase = Double(self.beatCounter % 8) + beatRatio }
 						if syncPhase < 4.0 {
 							usingInhale = true; let inhalePhase = Float(sin(Double.pi * syncPhase / 4.0)); breathEnv = inhalePhase * 0.8
@@ -1233,8 +1339,8 @@ class AudioEngineManager: ObservableObject {
 					chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 				}
 				
-				let finalL = ((chunkHL + chunkCL + chunkBL + chunkBrL + chunkClickL) / totalGain) * state.soundscapeMultiplier
-				let finalR = ((chunkHR + chunkCR + chunkBR + chunkBrR + chunkClickR) / totalGain) * state.soundscapeMultiplier
+				let finalL = ((chunkHL + chunkCL + chunkBL + chunkBrL + chunkClickL + chunkBinL) / totalGain) * state.soundscapeMultiplier
+				let finalR = ((chunkHR + chunkCR + chunkBR + chunkBrR + chunkClickR + chunkBinR) / totalGain) * state.soundscapeMultiplier
 				ptrL?[frame] = finalL; ptrR?[frame] = finalR
 			}
 			self.frameIdx += Int(frameCount)
@@ -1679,6 +1785,8 @@ struct GeneratorView: View {
 						Slider(value: $engine.slowdownMinutes, in: 5...120, step: 5)
 					}
 				}
+				Toggle("Organic Human Variation (RSA)", isOn: $engine.enableRSA)
+					.accessibilityHint("Naturally speeds up and slows down the heartbeat with a simulated breath cycle.")
 			}
 			
 			Section(header: Text("Procedural Layer Mixer").accessibilityHidden(true)) {
@@ -1714,6 +1822,20 @@ struct GeneratorView: View {
 					Text("Slow Breathing Base").bold()
 					Slider(value: $engine.breathVolume, in: 0...1).accessibilityLabel("Slow Breathing Volume")
 				}.padding(.vertical, 4)
+			}
+			
+			Section(header: Text("Binaural Brainwave Entrainment")) {
+				VStack(alignment: .leading) {
+					Text("Binaural Beat Volume").accessibilityHidden(true)
+					Slider(value: $engine.binauralVolume, in: 0...1).accessibilityLabel("Binaural Beat Volume")
+				}.padding(.vertical, 4)
+				
+				Picker("Entrainment Target", selection: $engine.binauralTypeIndex) {
+					ForEach(0..<engine.binauralOptions.count, id: \.self) { index in
+						Text(engine.binauralOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
 			}
 			
 			Section(header: Text("Spatial Audio Panning")) {
@@ -1818,6 +1940,8 @@ struct SleepTimerView: View {
 							Text("Fade out over: \(Int(engine.sleepFadeMinutes)) minutes")
 							Slider(value: $engine.sleepFadeMinutes, in: 5...120, step: 5)
 						}
+						Toggle("Deep Sleep Acoustic Dive", isOn: $engine.enableDeepSleepDive)
+							.accessibilityHint("Slowly rolls off high frequencies during the fade-out, sounding like sinking underwater.")
 					}
 				}
 				
