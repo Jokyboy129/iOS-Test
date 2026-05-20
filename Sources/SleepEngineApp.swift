@@ -1991,12 +1991,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 		commandCenter.pauseCommand.addTarget { [weak self] _ in
 			guard let self = self else { return .commandFailed }
-			if Date() < self.suppressRemotePauseUntil {
+			if self.isPlaying || self.isAlarmRinging || Date() < self.suppressRemotePauseUntil {
 				self.resumeAfterRouteChange()
 				return .success
 			}
-			if self.isPlaying { self.playStop(); return .success }
 			return .commandFailed
+		}
+		commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+			guard let self = self else { return .commandFailed }
+			if self.isPlaying || self.isAlarmRinging {
+				self.resumeAfterRouteChange()
+				return .success
+			}
+			self.playStop()
+			return .success
 		}
 	}
 
@@ -2084,7 +2092,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			guard let self = self, let userInfo = notification.userInfo,
 				  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-			if reason == .oldDeviceUnavailable {
+			if reason == .oldDeviceUnavailable || reason == .routeConfigurationChange || reason == .categoryChange || reason == .override {
 				self.resumeAfterRouteChange()
 				DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
 					self.resumeAfterRouteChange()
