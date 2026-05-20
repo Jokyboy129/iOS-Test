@@ -127,20 +127,28 @@ struct AudioRenderState {
 	var isPlaying: Bool = false
 }
 
-class AudioEngineManager: ObservableObject {
+struct MeditationItem {
+	var avPlayer: AVAudioPlayer?
+	var audioFile: AVAudioFile?
+	var duration: TimeInterval = 0
+}
+
+class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	let engine = AVAudioEngine()
 	var sourceNode: AVAudioSourceNode?
 	let reverbNode = AVAudioUnitReverb()
 	let preReverbMixer = AVAudioMixerNode()
+	let postReverbMixer = AVAudioMixerNode()
 	let importedMixer = AVAudioMixerNode()
 	let hspEqNode = AVAudioUnitEQ(numberOfBands: 1)
 	
 	let breathingNode = AVAudioPlayerNode()
 	let anchorNode = AVAudioPlayerNode()
+	let meditationPlayerNode = AVAudioPlayerNode()
 	
 	var rainPlayer: AVAudioPlayer?
 	var organicHeartbeatPlayer: AVAudioPlayer?
-	var meditationPlayers: [AVAudioPlayer] = []
+	var meditationItems: [MeditationItem] = []
 	
 	var hapticEngine: CHHapticEngine?
 	
@@ -213,6 +221,7 @@ class AudioEngineManager: ObservableObject {
 	@Published var voiceInReverb: Bool { didSet { save("voiceInReverb", voiceInReverb); updateVoiceRouting() } }
 	@Published var importedAudioInReverb: Bool { didSet { save("importedAudioInReverb", importedAudioInReverb); reloadImportedTracksRouting() } }
 	@Published var enableHSPMode: Bool { didSet { save("enableHSPMode", enableHSPMode); updateHSPMode() } }
+	@Published var meditationInHSP: Bool { didSet { save("meditationInHSP", meditationInHSP); loadMeditationTracks() } }
 	@Published var enableDeepSleepDive: Bool { didSet { save("enableDeepSleepDive", enableDeepSleepDive) } }
 	
 	@Published var enableSlowdown: Bool { didSet { save("enableSlowdown", enableSlowdown); syncRenderState() } }
@@ -305,7 +314,9 @@ class AudioEngineManager: ObservableObject {
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 	@Published var currentBreathingPhase: String = "Ready"
 	
-	init() {
+	override init() {
+		super.init()
+		
 		let ud = UserDefaults.standard
 		self.selectedProfileIndex = ud.integer(forKey: "selectedProfileIndex")
 		self.placementIndex = ud.integer(forKey: "placementIndex")
@@ -344,6 +355,7 @@ class AudioEngineManager: ObservableObject {
 		self.voiceInReverb = ud.object(forKey: "voiceInReverb") == nil ? false : ud.bool(forKey: "voiceInReverb")
 		self.importedAudioInReverb = ud.object(forKey: "importedAudioInReverb") == nil ? false : ud.bool(forKey: "importedAudioInReverb")
 		self.enableHSPMode = ud.bool(forKey: "enableHSPMode")
+		self.meditationInHSP = ud.object(forKey: "meditationInHSP") == nil ? true : ud.bool(forKey: "meditationInHSP")
 		self.enableDeepSleepDive = ud.bool(forKey: "enableDeepSleepDive")
 		
 		self.enableSlowdown = ud.bool(forKey: "enableSlowdown")
@@ -549,8 +561,8 @@ class AudioEngineManager: ObservableObject {
 			engine.connect(breathingNode, to: preReverbMixer, format: format)
 			engine.connect(anchorNode, to: preReverbMixer, format: format)
 		} else {
-			engine.connect(breathingNode, to: hspEqNode, format: format)
-			engine.connect(anchorNode, to: hspEqNode, format: format)
+			engine.connect(breathingNode, to: postReverbMixer, format: format)
+			engine.connect(anchorNode, to: postReverbMixer, format: format)
 		}
 	}
 	
@@ -763,8 +775,9 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	func clearMeditation() {
-		meditationPlayers.forEach { $0.stop() }
-		meditationPlayers.removeAll()
+		meditationItems.forEach { $0.avPlayer?.stop() }
+		meditationPlayerNode.stop()
+		meditationItems.removeAll()
 		meditationPaths = []
 		meditationNameStorage = "None"
 		isMeditationActive = false
@@ -824,9 +837,11 @@ class AudioEngineManager: ObservableObject {
 	}
 	
 	private func loadMeditationTracks() {
-		meditationPlayers.forEach { $0.stop() }
-		meditationPlayers.removeAll()
+		meditationItems.forEach { $0.avPlayer?.stop() }
+		meditationPlayerNode.stop()
+		meditationItems.removeAll()
 		meditationTotalDuration = 0
+		
 		for path in meditationPaths {
 			var targetURL: URL?
 			if meditationIsAppleMusic {
@@ -840,11 +855,74 @@ class AudioEngineManager: ObservableObject {
 				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 				targetURL = docs.appendingPathComponent(path)
 			}
-			if let url = targetURL, let player = try? AVAudioPlayer(contentsOf: url) {
-				player.numberOfLoops = 0
-				player.prepareToPlay()
-				meditationTotalDuration += player.duration
-				meditationPlayers.append(player)
+			
+			guard let url = targetURL else { continue }
+			var item = MeditationItem()
+			
+			if meditationInHSP {
+				if let file = try? AVAudioFile(forReading: url) {
+					item.audioFile = file
+					item.duration = Double(file.length) / file.processingFormat.sampleRate
+				} else if let player = try? AVAudioPlayer(contentsOf: url) {
+					player.numberOfLoops = 0
+					player.prepareToPlay()
+					player.delegate = self
+					item.avPlayer = player
+					item.duration = player.duration
+				}
+			} else {
+				if let player = try? AVAudioPlayer(contentsOf: url) {
+					player.numberOfLoops = 0
+					player.prepareToPlay()
+					player.delegate = self
+					item.avPlayer = player
+					item.duration = player.duration
+				}
+			}
+			
+			if item.avPlayer != nil || item.audioFile != nil {
+				meditationTotalDuration += item.duration
+				meditationItems.append(item)
+			}
+		}
+	}
+	
+	func playMeditationTrack(at index: Int) {
+		guard index < meditationItems.count else {
+			isMeditationActive = false
+			postMeditationPhase = true
+			postMeditationTime = 0
+			meditationFadeMultiplier = 1.0
+			return
+		}
+		let item = meditationItems[index]
+		if let player = item.avPlayer {
+			player.play()
+		} else if let file = item.audioFile {
+			meditationPlayerNode.scheduleFile(file, at: nil) { [weak self] in
+				DispatchQueue.main.async {
+					guard let self = self else { return }
+					if self.isMeditationActive && self.currentMeditationIndex == index && self.isPlaying {
+						self.currentMeditationIndex += 1
+						self.playMeditationTrack(at: self.currentMeditationIndex)
+					}
+				}
+			}
+			if !meditationPlayerNode.isPlaying {
+				meditationPlayerNode.play()
+			}
+		}
+	}
+	
+	func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+		DispatchQueue.main.async { [weak self] in
+			guard let self = self else { return }
+			if self.isMeditationActive && !self.meditationItems.isEmpty {
+				if self.currentMeditationIndex < self.meditationItems.count,
+				   self.meditationItems[self.currentMeditationIndex].avPlayer == player {
+					self.currentMeditationIndex += 1
+					self.playMeditationTrack(at: self.currentMeditationIndex)
+				}
 			}
 		}
 	}
@@ -859,21 +937,18 @@ class AudioEngineManager: ObservableObject {
 	private func checkTimers() {
 		let now = Date()
 		
-		if isPlaying && isMeditationActive && !meditationPlayers.isEmpty {
-			let player = meditationPlayers[currentMeditationIndex]
-			if player.isPlaying {
+		if isPlaying && isMeditationActive && !meditationItems.isEmpty {
+			let item = meditationItems[currentMeditationIndex]
+			var isCurrentlyPlaying = false
+			if let player = item.avPlayer {
+				isCurrentlyPlaying = player.isPlaying
+			} else if item.audioFile != nil {
+				isCurrentlyPlaying = meditationPlayerNode.isPlaying
+			}
+			
+			if isCurrentlyPlaying {
 				meditationElapsedTime += 0.1
 				meditationFadeMultiplier = min(1.0, meditationElapsedTime / max(1.0, meditationTotalDuration))
-			} else {
-				currentMeditationIndex += 1
-				if currentMeditationIndex < meditationPlayers.count {
-					meditationPlayers[currentMeditationIndex].play()
-				} else {
-					isMeditationActive = false
-					postMeditationPhase = true
-					postMeditationTime = 0
-					meditationFadeMultiplier = 1.0
-				}
 			}
 		} else if isPlaying && postMeditationPhase {
 			postMeditationTime += 0.1
@@ -917,7 +992,8 @@ class AudioEngineManager: ObservableObject {
 		rainPlayer?.pause()
 		organicHeartbeatPlayer?.pause()
 		for track in importedTracks { track.pause() }
-		meditationPlayers.forEach { $0.pause() }
+		meditationItems.forEach { $0.avPlayer?.pause() }
+		meditationPlayerNode.pause()
 		isPlaying = false
 		sleepTimerStartDate = nil
 		UIAccessibility.post(notification: .announcement, argument: "Soundscape halted.")
@@ -932,7 +1008,7 @@ class AudioEngineManager: ObservableObject {
 		if !isPlaying { playStop() }
 		dynamicVolumeMultiplier = 1.0
 		var fadeStep = 0
-		let totalSteps = Int(sleepFadeMinutes * 60.0 * 10) // Restored real-time duration logic
+		let totalSteps = Int(sleepFadeMinutes * 60.0 * 10)
 		fadeTimer?.invalidate()
 		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
 			guard let self = self else { return }
@@ -954,7 +1030,7 @@ class AudioEngineManager: ObservableObject {
 				timer.invalidate()
 				if self.isPlaying { self.stopSoundscape(keepEngineAlive: false) }
 				self.dynamicVolumeMultiplier = 1.0
-				self.updateHSPMode() // Reset EQ after simulation finishes
+				self.updateHSPMode()
 			}
 		}
 	}
@@ -1131,7 +1207,6 @@ class AudioEngineManager: ObservableObject {
 				if state.enableRSA {
 					actualBPM += sin(2.0 * Double.pi * timeInSeconds / 6.0) * 4.0
 				}
-				var beatDuration = 60.0 / actualBPM
 				
 				if state.enableSlowdown {
 					if bpmDropRate > 0 && self.currentDynamicBPM > state.targetBPM {
@@ -1141,170 +1216,127 @@ class AudioEngineManager: ObservableObject {
 						self.currentDynamicBPM -= bpmDropRate
 						if self.currentDynamicBPM > state.targetBPM { self.currentDynamicBPM = state.targetBPM }
 					}
-					
 					actualBPM = self.currentDynamicBPM
 					if state.enableRSA { actualBPM += sin(2.0 * Double.pi * timeInSeconds / 6.0) * 4.0 }
-					beatDuration = 60.0 / actualBPM
-					self.tBeat += dt
+				}
+				
+				let beatDuration = 60.0 / actualBPM
+				let previousTBeat = self.tBeat
+				self.tBeat += dt
+				
+				let isBeat = self.tBeat >= beatDuration
+				let isHalfBeat = previousTBeat < (beatDuration / 2.0) && self.tBeat >= (beatDuration / 2.0)
+				
+				if isBeat {
+					self.tBeat -= beatDuration
+					self.beatCounter += 1
+					self.clkPlayIdx = 0
 					
-					let clockType = self.clockOptions[state.clockTypeIndex]
-					let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
-					
-					if self.tBeat >= beatDuration {
-						self.tBeat -= beatDuration; self.beatCounter += 1; self.clkPlayIdx = 0
-						if state.syncClick {
-							if state.clickPatternIndex == 0 { self.clickPlayIdx = 0; self.softClickPlayIdx = 0 }
-							else if state.clickPatternIndex == 1 { self.clickPlayIdx = 0 }
-							else if state.clickPatternIndex == 2 { self.softClickPlayIdx = 0 }
+					if state.syncClick {
+						if state.clickPatternIndex == 0 {
+							self.clickPlayIdx = 0
+							self.softClickPlayIdx = 0
+						} else if state.clickPatternIndex == 1 {
+							self.clickPlayIdx = 0
+						} else if state.clickPatternIndex == 2 {
+							self.softClickPlayIdx = 0
 						}
-						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
-						if state.syncBreathing && !state.isBreathing {
-							let phaseBeat = self.beatCounter % 8
-							if phaseBeat != self.lastPhaseBeat {
-								self.lastPhaseBeat = phaseBeat
-								if phaseBeat == 0 {
-									DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "INHALE") } }
-								} else if phaseBeat == 4 {
-									DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "EXHALE") } }
-								} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
-									let anchor = self.anchors.randomElement()!
-									DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
-								}
+					}
+					
+					DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
+					if state.syncBreathing && !state.isBreathing {
+						let phaseBeat = self.beatCounter % 8
+						if phaseBeat != self.lastPhaseBeat {
+							self.lastPhaseBeat = phaseBeat
+							if phaseBeat == 0 {
+								DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "INHALE") } }
+							} else if phaseBeat == 4 {
+								DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "EXHALE") } }
+							} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
+								let anchor = self.anchors.randomElement()!
+								DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
 							}
 						}
-					}
-					if self.tBeat >= config.dubDelay && self.tBeat - dt < config.dubDelay { DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) } }
-					if ticksPerBeat == 2 && self.tBeat >= (beatDuration / 2.0) && self.tBeat - dt < (beatDuration / 2.0) { self.clkPlayIdx2 = 0 }
-					if state.syncClick && self.tBeat >= (beatDuration / 2.0) && self.tBeat - dt < (beatDuration / 2.0) {
-						if state.clickPatternIndex == 1 { self.softClickPlayIdx = 0 }
-						else if state.clickPatternIndex == 2 { self.clickPlayIdx = 0 }
-					}
-					
-					let t = self.tBeat; let atk = 0.04; let rel = 0.02
-					var lEnv = exp(-config.lubDecay * t); var slEnv = exp(-config.subDecay * t)
-					if t < atk {
-						let attackCurve = pow(sin((Double.pi / 2.0) * t / atk), 2)
-						lEnv *= attackCurve; slEnv *= attackCurve
-					}
-					if t > beatDuration - rel {
-						let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
-						lEnv *= releaseCurve; slEnv *= releaseCurve
-					}
-					let subLub = sin(2 * Double.pi * config.subFreq * t) * slEnv * config.subVol
-					let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
-					let lub = sin(lubPhase) * lEnv
-					
-					var dEnv = 0.0; var sdEnv = 0.0; var subDub = 0.0; var dub = 0.0
-					if t >= config.dubDelay {
-						let tAct = t - config.dubDelay
-						dEnv = exp(-config.dubDecay * tAct); sdEnv = exp(-config.subDecay * tAct)
-						if tAct < atk {
-							let attackCurve = pow(sin((Double.pi / 2.0) * tAct / atk), 2)
-							dEnv *= attackCurve; sdEnv *= attackCurve
-						}
-						if t > beatDuration - rel {
-							let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
-							dEnv *= releaseCurve; sdEnv *= releaseCurve
-						}
-						subDub = sin(2 * Double.pi * config.subFreq * t) * sdEnv * config.subVol * 0.85
-						let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
-						dub = sin(dubPhase) * dEnv
-					}
-					let combinedLub = Float((lub + subLub) * 0.8); let combinedDub = Float((dub + subDub) * 0.8)
-					if placement == "Center Beats & Flow" {
-						hL = (combinedLub + combinedDub) * 0.85; hR = (combinedLub + combinedDub) * 0.85
-					} else if placement == "Lub Left Ear / Dub Right Ear" {
-						hL = combinedLub; hR = combinedDub
-					} else {
-						hL = combinedDub; hR = combinedLub
-					}
-					flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
-				} else {
-					self.tBeat += dt
-					if self.tBeat >= beatDuration {
-						self.tBeat -= beatDuration; self.beatCounter += 1; self.clkPlayIdx = 0
-						if state.syncClick {
-							if state.clickPatternIndex == 0 { self.clickPlayIdx = 0; self.softClickPlayIdx = 0 }
-							else if state.clickPatternIndex == 1 { self.clickPlayIdx = 0 }
-							else if state.clickPatternIndex == 2 { self.softClickPlayIdx = 0 }
-						}
-						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
-						if state.syncBreathing && !state.isBreathing {
-							let phaseBeat = self.beatCounter % 8
-							if phaseBeat != self.lastPhaseBeat {
-								self.lastPhaseBeat = phaseBeat
-								if phaseBeat == 0 {
-									DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "INHALE") } }
-								} else if phaseBeat == 4 {
-									DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "EXHALE") } }
-								} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
-									let anchor = self.anchors.randomElement()!
-									DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
-								}
-							}
-						}
-					}
-					
-					let t = self.tBeat; let atk = 0.04; let rel = 0.02
-					var lEnv = exp(-config.lubDecay * t); var slEnv = exp(-config.subDecay * t)
-					if t < atk {
-						let attackCurve = pow(sin((Double.pi / 2.0) * t / atk), 2)
-						lEnv *= attackCurve; slEnv *= attackCurve
-					}
-					if t > beatDuration - rel {
-						let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
-						lEnv *= releaseCurve; slEnv *= releaseCurve
-					}
-					let subLub = sin(2 * Double.pi * config.subFreq * t) * slEnv * config.subVol
-					let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
-					let lub = sin(lubPhase) * lEnv
-					
-					var dEnv = 0.0; var sdEnv = 0.0; var subDub = 0.0; var dub = 0.0
-					if t >= config.dubDelay {
-						let tAct = t - config.dubDelay
-						dEnv = exp(-config.dubDecay * tAct); sdEnv = exp(-config.subDecay * tAct)
-						if tAct < atk {
-							let attackCurve = pow(sin((Double.pi / 2.0) * tAct / atk), 2)
-							dEnv *= attackCurve; sdEnv *= attackCurve
-						}
-						if t > beatDuration - rel {
-							let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
-							dEnv *= releaseCurve; sdEnv *= releaseCurve
-						}
-						subDub = sin(2 * Double.pi * config.subFreq * t) * sdEnv * config.subVol * 0.85
-						let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
-						dub = sin(dubPhase) * dEnv
-					}
-					
-					let combinedLub = Float((lub + subLub) * 0.8); let combinedDub = Float((dub + subDub) * 0.8)
-					if placement == "Center Beats & Flow" {
-						hL = (combinedLub + combinedDub) * 0.85; hR = (combinedLub + combinedDub) * 0.85
-					} else if placement == "Lub Left Ear / Dub Right Ear" {
-						hL = combinedLub; hR = combinedDub
-					} else {
-						hL = combinedDub; hR = combinedLub
-					}
-					flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
-					
-					if t >= config.dubDelay && t - dt < config.dubDelay { DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) } }
-					let clockType = self.clockOptions[state.clockTypeIndex]
-					let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
-					if ticksPerBeat == 2 && t >= (beatDuration / 2.0) && t - dt < (beatDuration / 2.0) { self.clkPlayIdx2 = 0 }
-					if state.syncClick && t >= (beatDuration / 2.0) && t - dt < (beatDuration / 2.0) {
-						if state.clickPatternIndex == 1 { self.softClickPlayIdx = 0 }
-						else if state.clickPatternIndex == 2 { self.clickPlayIdx = 0 }
 					}
 				}
 				
+				let clockType = self.clockOptions[state.clockTypeIndex]
+				let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
+				
+				if isHalfBeat {
+					if ticksPerBeat == 2 { self.clkPlayIdx2 = 0 }
+					if state.syncClick {
+						if state.clickPatternIndex == 1 {
+							self.softClickPlayIdx = 0
+						} else if state.clickPatternIndex == 2 {
+							self.clickPlayIdx = 0
+						}
+					}
+				}
+				
+				let t = self.tBeat
+				let isDub = previousTBeat < config.dubDelay && t >= config.dubDelay
+				if isDub { DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) } }
+				
+				let atk = 0.04; let rel = 0.02
+				var lEnv = exp(-config.lubDecay * t); var slEnv = exp(-config.subDecay * t)
+				if t < atk {
+					let attackCurve = pow(sin((Double.pi / 2.0) * t / atk), 2)
+					lEnv *= attackCurve; slEnv *= attackCurve
+				}
+				if t > beatDuration - rel {
+					let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
+					lEnv *= releaseCurve; slEnv *= releaseCurve
+				}
+				let subLub = sin(2 * Double.pi * config.subFreq * t) * slEnv * config.subVol
+				let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
+				let lub = sin(lubPhase) * lEnv
+				
+				var dEnv = 0.0; var sdEnv = 0.0; var subDub = 0.0; var dub = 0.0
+				if t >= config.dubDelay {
+					let tAct = t - config.dubDelay
+					dEnv = exp(-config.dubDecay * tAct); sdEnv = exp(-config.subDecay * tAct)
+					if tAct < atk {
+						let attackCurve = pow(sin((Double.pi / 2.0) * tAct / atk), 2)
+						dEnv *= attackCurve; sdEnv *= attackCurve
+					}
+					if t > beatDuration - rel {
+						let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
+						dEnv *= releaseCurve; sdEnv *= releaseCurve
+					}
+					subDub = sin(2 * Double.pi * config.subFreq * t) * sdEnv * config.subVol * 0.85
+					let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
+					dub = sin(dubPhase) * dEnv
+				}
+				
+				let combinedLub = Float((lub + subLub) * 0.8); let combinedDub = Float((dub + subDub) * 0.8)
+				if placement == "Center Beats & Flow" {
+					hL = (combinedLub + combinedDub) * 0.85; hR = (combinedLub + combinedDub) * 0.85
+				} else if placement == "Lub Left Ear / Dub Right Ear" {
+					hL = combinedLub; hR = combinedDub
+				} else {
+					hL = combinedDub; hR = combinedLub
+				}
+				flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
+				
 				if !state.syncClick {
 					let halfSec = Int(self.sampleRate / 2.0)
-					if currentFrame % Int(self.sampleRate) == 0 {
-						if state.clickPatternIndex == 0 { self.clickPlayIdx = 0; self.softClickPlayIdx = 0 }
-						else if state.clickPatternIndex == 1 { self.clickPlayIdx = 0 }
-						else if state.clickPatternIndex == 2 { self.softClickPlayIdx = 0 }
-					} else if currentFrame % Int(self.sampleRate) == halfSec {
-						if state.clickPatternIndex == 1 { self.softClickPlayIdx = 0 }
-						else if state.clickPatternIndex == 2 { self.clickPlayIdx = 0 }
+					let remainder = currentFrame % Int(self.sampleRate)
+					if remainder == 0 {
+						if state.clickPatternIndex == 0 {
+							self.clickPlayIdx = 0
+							self.softClickPlayIdx = 0
+						} else if state.clickPatternIndex == 1 {
+							self.clickPlayIdx = 0
+						} else if state.clickPatternIndex == 2 {
+							self.softClickPlayIdx = 0
+						}
+					} else if remainder == halfSec {
+						if state.clickPatternIndex == 1 {
+							self.softClickPlayIdx = 0
+						} else if state.clickPatternIndex == 2 {
+							self.clickPlayIdx = 0
+						}
 					}
 				}
 				
@@ -1416,6 +1448,8 @@ class AudioEngineManager: ObservableObject {
 			engine.attach(preReverbMixer)
 			engine.attach(importedMixer)
 			engine.attach(reverbNode)
+			engine.attach(postReverbMixer)
+			engine.attach(meditationPlayerNode)
 			engine.attach(breathingNode)
 			engine.attach(anchorNode)
 			engine.attach(hspEqNode)
@@ -1424,7 +1458,9 @@ class AudioEngineManager: ObservableObject {
 			engine.connect(importedMixer, to: preReverbMixer, format: format)
 			
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
-			engine.connect(reverbNode, to: hspEqNode, format: format)
+			engine.connect(reverbNode, to: postReverbMixer, format: format)
+			engine.connect(meditationPlayerNode, to: postReverbMixer, format: nil)
+			engine.connect(postReverbMixer, to: hspEqNode, format: format)
 			engine.connect(hspEqNode, to: engine.mainMixerNode, format: format)
 			
 			updateVoiceRouting()
@@ -1614,7 +1650,7 @@ class AudioEngineManager: ObservableObject {
 				
 				engine.prepare()
 				
-				if !meditationPlayers.isEmpty {
+				if !meditationItems.isEmpty {
 					isMeditationActive = true
 					currentMeditationIndex = 0
 					meditationElapsedTime = 0
@@ -1640,8 +1676,8 @@ class AudioEngineManager: ObservableObject {
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.play() }
-					if self.isMeditationActive && !self.meditationPlayers.isEmpty {
-						self.meditationPlayers[self.currentMeditationIndex].play()
+					if self.isMeditationActive && !self.meditationItems.isEmpty {
+						self.playMeditationTrack(at: self.currentMeditationIndex)
 					}
 					self.isPlaying = true
 					self.updateNowPlaying()
@@ -1703,8 +1739,8 @@ class AudioEngineManager: ObservableObject {
 					self.rainPlayer?.play()
 					self.organicHeartbeatPlayer?.play()
 					for track in self.importedTracks { track.play() }
-					if self.isMeditationActive && !self.meditationPlayers.isEmpty {
-						self.meditationPlayers[self.currentMeditationIndex].play()
+					if self.isMeditationActive && !self.meditationItems.isEmpty {
+						self.playMeditationTrack(at: self.currentMeditationIndex)
 					}
 				} catch {}
 			}
@@ -2015,8 +2051,6 @@ struct SleepTimerView: View {
 							Text("Fade out over: \(Int(engine.sleepFadeMinutes)) minutes")
 							Slider(value: $engine.sleepFadeMinutes, in: 5...120, step: 5)
 						}
-						Toggle("Deep Sleep Acoustic Dive", isOn: $engine.enableDeepSleepDive)
-							.accessibilityHint("Slowly rolls off high frequencies during the fade-out, sounding like sinking underwater.")
 					}
 				}
 				
@@ -2067,6 +2101,9 @@ struct SettingsView: View {
 			Section(header: Text("Highly Sensitive Person (HSP) Features")) {
 				Toggle("HSP Acoustic Softening", isOn: $engine.enableHSPMode)
 					.accessibilityHint("Applies a global low-pass filter to muffle harsh high frequencies and soften the overall soundscape.")
+				Toggle("Route Meditation through HSP EQ", isOn: $engine.meditationInHSP)
+				Toggle("Deep Sleep Acoustic Dive", isOn: $engine.enableDeepSleepDive)
+					.accessibilityHint("Slowly rolls off high frequencies during the fade-out, sounding like sinking underwater.")
 			}
 			
 			Section(header: Text("Acoustics & Space")) {
