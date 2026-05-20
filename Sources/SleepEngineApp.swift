@@ -111,8 +111,10 @@ struct AudioRenderState {
 	var panBrownIndex: Int = 0
 	var panBreathIndex: Int = 0
 	var panClickIndex: Int = 0
+	var panSoftClickIndex: Int = 0
 	var clockTypeIndex: Int = 0
 	var clickPatternIndex: Int = 0
+	var softClickBoostEnabled: Bool = false
 	var syncClock: Bool = false
 	var syncClick: Bool = true
 	var enableSlowdown: Bool = false
@@ -203,9 +205,11 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var panBrownIndex: Int = 0 { didSet { save("panBrownIndex", panBrownIndex); syncRenderState() } }
 	@Published var panBreathIndex: Int = 0 { didSet { save("panBreathIndex", panBreathIndex); syncRenderState() } }
 	@Published var panClickIndex: Int = 0 { didSet { save("panClickIndex", panClickIndex); syncRenderState() } }
+	@Published var panSoftClickIndex: Int = 0 { didSet { save("panSoftClickIndex", panSoftClickIndex); syncRenderState() } }
 	
 	@Published var clockTypeIndex: Int = 0 { didSet { save("clockTypeIndex", clockTypeIndex); rebuildPrototypes(); syncRenderState() } }
 	@Published var clickPatternIndex: Int = 0 { didSet { save("clickPatternIndex", clickPatternIndex); syncRenderState() } }
+	@Published var softClickBoostEnabled: Bool = false { didSet { save("softClickBoostEnabled", softClickBoostEnabled); syncRenderState() } }
 	@Published var binauralTypeIndex: Int = 0 { didSet { save("binauralTypeIndex", binauralTypeIndex); syncRenderState() } }
 	@Published var syncClock: Bool = false { didSet { save("syncClock", syncClock); syncRenderState() } }
 	@Published var syncClick: Bool = true { didSet { save("syncClick", syncClick); syncRenderState() } }
@@ -309,6 +313,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var breathFrameCounter: Int = 0
 	private var lastManualState: Int = 0
 	private var lastPhaseBeat: Int = -1
+	private var syncedRealBreathSampleIndex: Int = 0
+	private var syncedRealBreathSegment: Int = 0
 	
 	private var breathingTask: Task<Void, Never>?
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -337,9 +343,11 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.panBrownIndex = ud.integer(forKey: "panBrownIndex")
 		self.panBreathIndex = ud.integer(forKey: "panBreathIndex")
 		self.panClickIndex = ud.integer(forKey: "panClickIndex")
+		self.panSoftClickIndex = ud.object(forKey: "panSoftClickIndex") == nil ? self.panClickIndex : ud.integer(forKey: "panSoftClickIndex")
 		
 		self.clockTypeIndex = ud.integer(forKey: "clockTypeIndex")
 		self.clickPatternIndex = ud.integer(forKey: "clickPatternIndex")
+		self.softClickBoostEnabled = ud.bool(forKey: "softClickBoostEnabled")
 		self.binauralTypeIndex = ud.integer(forKey: "binauralTypeIndex")
 		self.syncClock = ud.bool(forKey: "syncClock")
 		self.syncClick = ud.object(forKey: "syncClick") == nil ? true : ud.bool(forKey: "syncClick")
@@ -420,8 +428,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		newState.panBrownIndex = self.panBrownIndex
 		newState.panBreathIndex = self.panBreathIndex
 		newState.panClickIndex = self.panClickIndex
+		newState.panSoftClickIndex = self.panSoftClickIndex
 		newState.clockTypeIndex = self.clockTypeIndex
 		newState.clickPatternIndex = self.clickPatternIndex
+		newState.softClickBoostEnabled = self.softClickBoostEnabled
 		newState.syncClock = self.syncClock
 		newState.syncClick = self.syncClick
 		newState.enableSlowdown = self.enableSlowdown
@@ -615,6 +625,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		breathFrameCounter = 0
 		lastManualState = 0
 		lastPhaseBeat = -1
+		syncedRealBreathSampleIndex = 0
+		syncedRealBreathSegment = 0
 	}
 	
 	private func loadPlayer(filename: String) -> AVAudioPlayer? {
@@ -1195,7 +1207,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				
 				let vHeart = self.smoothedVHeart; let vClock = self.smoothedVClock; let vBrown = self.smoothedVBrown
 				let vBreath = self.smoothedVBreath; let vClick = self.smoothedVClick; let vSoftClick = self.smoothedVSoftClick; let vBinaural = self.smoothedVBinaural
-				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vSoftClick * 0.3) + (vBinaural * 0.4)
+				let softClickBoost: Float = state.softClickBoostEnabled ? 2.5 : 1.0
+				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vSoftClick * 0.3 * softClickBoost) + (vBinaural * 0.4)
 
 				let currentFrame = self.frameIdx + frame
 				let timeInSeconds = Double(currentFrame) / self.sampleRate
@@ -1368,8 +1381,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 				if vSoftClick > 0 && self.softClickPlayIdx < clickSoft.count {
 					let cSample = clickSoft[self.softClickPlayIdx]
-					let posClick = self.getPanPos(mode: state.panClickIndex, time: tChunk)
-					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8)
+					let posClick = self.getPanPos(mode: state.panSoftClickIndex, time: tChunk)
+					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8 * softClickBoost)
 					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
 					self.softClickPlayIdx += 1
 				}
@@ -1407,7 +1420,18 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							usingExhale = true; let exhalePhase = Float(sin(Double.pi * (syncPhase - 4.0) / 4.0)); breathEnv = exhalePhase * 0.6
 							sampleIdxForRealBreath = Int(((syncPhase - 4.0) / 4.0) * (4.0 * beatDuration * self.sampleRate))
 						}
+						if state.useRealBreathing {
+							let currentSegment = usingInhale ? 1 : (usingExhale ? 2 : 0)
+							if currentSegment != self.syncedRealBreathSegment {
+								self.syncedRealBreathSegment = currentSegment
+								self.syncedRealBreathSampleIndex = 0
+							}
+							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
+							if currentSegment != 0 { self.syncedRealBreathSampleIndex += 1 }
+						}
 					} else {
+						self.syncedRealBreathSegment = 0
+						self.syncedRealBreathSampleIndex = 0
 						let breathDuration = 6.0; let breathPhase = fmod(timeInSeconds, breathDuration) / breathDuration
 						if breathPhase < 0.45 {
 							usingInhale = true; let inhalePhase = Float(sin(Double.pi * (breathPhase / 0.45))); breathEnv = inhalePhase * 0.8
@@ -1913,6 +1937,8 @@ struct GeneratorView: View {
 					
 					Text("Soft Click Track").accessibilityHidden(true)
 					Slider(value: $engine.softClickVolume, in: 0...1).accessibilityLabel("Soft Click Volume")
+					Toggle("Boost Soft Click", isOn: $engine.softClickBoostEnabled)
+						.accessibilityHint("Raises only the soft click layer above its normal slider range.")
 					
 					Picker("Click Pattern", selection: $engine.clickPatternIndex) {
 						Text("Simultaneous").tag(0)
@@ -1985,6 +2011,13 @@ struct GeneratorView: View {
 				}
 				.pickerStyle(MenuPickerStyle())
 				
+				Picker("Soft Click Position", selection: $engine.panSoftClickIndex) {
+					ForEach(0..<engine.panOptions.count, id: \.self) { index in
+						Text(engine.panOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
+
 				Picker("Brown Noise Position", selection: $engine.panBrownIndex) {
 					ForEach(0..<engine.panOptions.count, id: \.self) { index in
 						Text(engine.panOptions[index]).tag(index)
