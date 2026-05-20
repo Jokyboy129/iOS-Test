@@ -52,11 +52,7 @@ class ImportedTrack: Identifiable, ObservableObject {
 		
 		if avPlayer != nil {
 			let avVol = Float(volume * masterVolume * dynamicVolumeMultiplier * specificMultiplier)
-			if avPlayer?.isPlaying == true {
-				avPlayer?.setVolume(avVol, fadeDuration: 1.0)
-			} else {
-				avPlayer?.volume = avVol
-			}
+			avPlayer?.volume = avVol
 		}
 		
 		if enginePlayerNode != nil {
@@ -373,8 +369,8 @@ class AudioEngineManager: ObservableObject {
 		applyAudioSessionSettings()
 		setupOrganicPlayers()
 		
-		realInhaleBuffer = loadWAV(filename: "REAL_INHALE").map { $0 * 4.0 }
-		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE").map { $0 * 4.0 }
+		realInhaleBuffer = loadWAV(filename: "REAL_INHALE")
+		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE")
 		clickBuffer = loadWAV(filename: "CLICK")
 		
 		setupAudio()
@@ -551,23 +547,15 @@ class AudioEngineManager: ObservableObject {
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
 		
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
-		if rainPlayer?.isPlaying == true {
-			rainPlayer?.setVolume(targetRainVol, fadeDuration: 1.0)
-		} else {
-			rainPlayer?.volume = targetRainVol
-		}
+		rainPlayer?.volume = targetRainVol
 		
 		let targetOrgVol = Float(organicHeartbeatVolume * masterVolume) * soundscapeMultiplier
-		if organicHeartbeatPlayer?.isPlaying == true {
-			organicHeartbeatPlayer?.setVolume(targetOrgVol, fadeDuration: 1.0)
-		} else {
-			organicHeartbeatPlayer?.volume = targetOrgVol
-		}
+		organicHeartbeatPlayer?.volume = targetOrgVol
 		
 		importedMixer.outputVolume = 1.0
 		
 		let baseVoiceVol = Float(masterVolume) * soundscapeMultiplier
-		breathingNode.volume = baseVoiceVol
+		breathingNode.volume = useRealBreathing ? (baseVoiceVol * 4.0) : baseVoiceVol
 		anchorNode.volume = baseVoiceVol * 2.0
 		
 		for track in importedTracks {
@@ -935,7 +923,7 @@ class AudioEngineManager: ObservableObject {
 	
 	private func startTimersMonitor() {
 		alarmTimer?.invalidate()
-		alarmTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+		alarmTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
 			self?.checkTimers()
 		}
 	}
@@ -947,7 +935,7 @@ class AudioEngineManager: ObservableObject {
 		if isPlaying && isMeditationActive && !meditationPlayers.isEmpty {
 			let player = meditationPlayers[currentMeditationIndex]
 			if player.isPlaying {
-				meditationElapsedTime += 1.0
+				meditationElapsedTime += 0.1
 				meditationFadeMultiplier = min(1.0, meditationElapsedTime / max(1.0, meditationTotalDuration))
 			} else {
 				currentMeditationIndex += 1
@@ -961,7 +949,7 @@ class AudioEngineManager: ObservableObject {
 				}
 			}
 		} else if isPlaying && postMeditationPhase {
-			postMeditationTime += 1.0
+			postMeditationTime += 0.1
 			postMeditationMultiplier = min(1.0, postMeditationTime / 300.0)
 			if postMeditationTime >= 300.0 {
 				postMeditationPhase = false
@@ -1051,7 +1039,6 @@ class AudioEngineManager: ObservableObject {
 		} else {
 			alarmAvPlayer?.volume = 0.0
 			alarmAvPlayer?.play()
-			alarmAvPlayer?.setVolume(1.0, fadeDuration: fadeDuration)
 		}
 		
 		isMorningFadeActive = false
@@ -1068,6 +1055,8 @@ class AudioEngineManager: ObservableObject {
 			
 			if self.alarmInReverb && !self.alarmTrackIsAppleMusic {
 				self.alarmMixer.outputVolume = Float(progress)
+			} else {
+				self.alarmAvPlayer?.volume = Float(progress)
 			}
 			
 			if fadeStep >= totalSteps {
