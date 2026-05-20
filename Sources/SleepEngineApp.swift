@@ -277,6 +277,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var activeMorningAlarmDate: Date?
 	private var lastAlarmFireDayKey = ""
 	private let alarmCrossfadeDuration: TimeInterval = 60.0
+	private var wasPlayingBeforeInterruption = false
+	private var wasAlarmRingingBeforeInterruption = false
+	private var suppressRemotePauseUntil = Date.distantPast
 
 	@Published var meditationPaths: [String] = [] { didSet { save("meditationPaths", meditationPaths) } }
 	@Published var meditationIsAppleMusic: Bool = false { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
@@ -1988,12 +1991,52 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 		commandCenter.pauseCommand.addTarget { [weak self] _ in
 			guard let self = self else { return .commandFailed }
+			if Date() < self.suppressRemotePauseUntil {
+				self.resumeAfterRouteChange()
+				return .success
+			}
 			if self.isPlaying { self.playStop(); return .success }
 			return .commandFailed
 		}
 	}
 
+	private func pauseForInterruption() {
+		wasPlayingBeforeInterruption = isPlaying
+		wasAlarmRingingBeforeInterruption = isAlarmRinging
+		rainPlayer?.pause()
+		organicHeartbeatPlayer?.pause()
+		for track in importedTracks { track.pause() }
+		meditationItems.forEach { $0.avPlayer?.pause() }
+		meditationPlayerNode.pause()
+		alarmPlayer?.pause()
+		updateSilentBackgroundAudio()
+	}
+
+	private func resumeAfterInterruption() {
+		applyAudioSessionSettings()
+		if wasPlayingBeforeInterruption {
+			do {
+				if !engine.isRunning {
+					try engine.start()
+				}
+				rainPlayer?.play()
+				organicHeartbeatPlayer?.play()
+				for track in importedTracks { track.play() }
+				if isMeditationActive && !meditationItems.isEmpty {
+					playMeditationTrack(at: currentMeditationIndex)
+				}
+			} catch {}
+		}
+		if wasAlarmRingingBeforeInterruption || isAlarmRinging {
+			alarmPlayer?.play()
+		}
+		wasPlayingBeforeInterruption = false
+		wasAlarmRingingBeforeInterruption = false
+		updateSilentBackgroundAudio()
+	}
+
 	private func resumeAfterRouteChange() {
+		suppressRemotePauseUntil = Date().addingTimeInterval(3.0)
 		applyAudioSessionSettings()
 		updateSilentBackgroundAudio()
 		if isPlaying {
@@ -2027,11 +2070,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
 				  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
 			if type == .began {
-				if self.isPlaying { self.playStop() }
+				self.pauseForInterruption()
 			} else if type == .ended {
 				guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
 				let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-				if options.contains(.shouldResume) { if !self.isPlaying { self.playStop() } }
+				if options.contains(.shouldResume) || self.wasPlayingBeforeInterruption || self.wasAlarmRingingBeforeInterruption {
+					self.resumeAfterInterruption()
+				}
 			}
 		}
 
@@ -2041,6 +2086,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
 			if reason == .oldDeviceUnavailable {
 				self.resumeAfterRouteChange()
+				DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+					self.resumeAfterRouteChange()
+				}
 			}
 		}
 
