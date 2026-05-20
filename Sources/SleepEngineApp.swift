@@ -52,7 +52,11 @@ class ImportedTrack: Identifiable, ObservableObject {
 		
 		if avPlayer != nil {
 			let avVol = Float(volume * masterVolume * dynamicVolumeMultiplier * specificMultiplier)
-			avPlayer?.volume = avVol
+			if avPlayer?.isPlaying == true {
+				avPlayer?.setVolume(avVol, fadeDuration: 1.0)
+			} else {
+				avPlayer?.volume = avVol
+			}
 		}
 		
 		if enginePlayerNode != nil {
@@ -547,10 +551,18 @@ class AudioEngineManager: ObservableObject {
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
 		
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
-		rainPlayer?.volume = targetRainVol
+		if rainPlayer?.isPlaying == true {
+			rainPlayer?.setVolume(targetRainVol, fadeDuration: 1.0)
+		} else {
+			rainPlayer?.volume = targetRainVol
+		}
 		
 		let targetOrgVol = Float(organicHeartbeatVolume * masterVolume) * soundscapeMultiplier
-		organicHeartbeatPlayer?.volume = targetOrgVol
+		if organicHeartbeatPlayer?.isPlaying == true {
+			organicHeartbeatPlayer?.setVolume(targetOrgVol, fadeDuration: 1.0)
+		} else {
+			organicHeartbeatPlayer?.volume = targetOrgVol
+		}
 		
 		importedMixer.outputVolume = 1.0
 		
