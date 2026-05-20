@@ -100,6 +100,7 @@ struct AudioRenderState {
 	var placementIndex: Int = 0
 	var heartbeatVolume: Float = 0
 	var clockVolume: Float = 0
+	var softClickVolume: Float = 0
 	var brownVolume: Float = 0
 	var breathVolume: Float = 0
 	var clickVolume: Float = 0
@@ -111,6 +112,7 @@ struct AudioRenderState {
 	var panBreathIndex: Int = 0
 	var panClickIndex: Int = 0
 	var clockTypeIndex: Int = 0
+	var clickPatternIndex: Int = 0
 	var syncClock: Bool = false
 	var syncClick: Bool = true
 	var enableSlowdown: Bool = false
@@ -179,6 +181,7 @@ class AudioEngineManager: ObservableObject {
 	
 	@Published var heartbeatVolume: Double { didSet { save("heartbeatVolume", heartbeatVolume); syncRenderState() } }
 	@Published var clockVolume: Double { didSet { save("clockVolume", clockVolume); syncRenderState() } }
+	@Published var softClickVolume: Double { didSet { save("softClickVolume", softClickVolume); syncRenderState() } }
 	@Published var brownVolume: Double { didSet { save("brownVolume", brownVolume); syncRenderState() } }
 	@Published var breathVolume: Double { didSet { save("breathVolume", breathVolume); syncRenderState() } }
 	@Published var clickVolume: Double { didSet { save("clickVolume", clickVolume); syncRenderState() } }
@@ -194,6 +197,7 @@ class AudioEngineManager: ObservableObject {
 	@Published var panClickIndex: Int { didSet { save("panClickIndex", panClickIndex); syncRenderState() } }
 	
 	@Published var clockTypeIndex: Int { didSet { save("clockTypeIndex", clockTypeIndex); rebuildPrototypes(); syncRenderState() } }
+	@Published var clickPatternIndex: Int { didSet { save("clickPatternIndex", clickPatternIndex); syncRenderState() } }
 	@Published var binauralTypeIndex: Int { didSet { save("binauralTypeIndex", binauralTypeIndex); syncRenderState() } }
 	@Published var syncClock: Bool { didSet { save("syncClock", syncClock); syncRenderState() } }
 	@Published var syncClick: Bool { didSet { save("syncClick", syncClick); syncRenderState() } }
@@ -267,6 +271,7 @@ class AudioEngineManager: ObservableObject {
 	private var realInhaleBuffer = [Float]()
 	private var realExhaleBuffer = [Float]()
 	private var clickBuffer = [Float]()
+	private var clickSoftBuffer = [Float]()
 	
 	private var nNoise = 0
 	private var frameIdx = 0
@@ -279,12 +284,14 @@ class AudioEngineManager: ObservableObject {
 	private var clkPlayIdx: Int = Int.max
 	private var clkPlayIdx2: Int = Int.max
 	private var clickPlayIdx: Int = Int.max
+	private var softClickPlayIdx: Int = Int.max
 	
 	private var smoothedVHeart: Float = 0.0
 	private var smoothedVClock: Float = 0.0
 	private var smoothedVBrown: Float = 0.0
 	private var smoothedVBreath: Float = 0.0
 	private var smoothedVClick: Float = 0.0
+	private var smoothedVSoftClick: Float = 0.0
 	private var smoothedVBinaural: Float = 0.0
 	
 	private var binauralPhaseL: Double = 0.0
@@ -306,6 +313,7 @@ class AudioEngineManager: ObservableObject {
 		
 		self.heartbeatVolume = ud.double(forKey: "heartbeatVolume")
 		self.clockVolume = ud.double(forKey: "clockVolume")
+		self.softClickVolume = ud.double(forKey: "softClickVolume")
 		self.brownVolume = ud.double(forKey: "brownVolume")
 		self.breathVolume = ud.double(forKey: "breathVolume")
 		self.clickVolume = ud.double(forKey: "clickVolume")
@@ -320,6 +328,7 @@ class AudioEngineManager: ObservableObject {
 		self.panClickIndex = ud.integer(forKey: "panClickIndex")
 		
 		self.clockTypeIndex = ud.integer(forKey: "clockTypeIndex")
+		self.clickPatternIndex = ud.integer(forKey: "clickPatternIndex")
 		self.binauralTypeIndex = ud.integer(forKey: "binauralTypeIndex")
 		self.syncClock = ud.bool(forKey: "syncClock")
 		self.syncClick = ud.object(forKey: "syncClick") == nil ? true : ud.bool(forKey: "syncClick")
@@ -363,6 +372,7 @@ class AudioEngineManager: ObservableObject {
 		realInhaleBuffer = loadWAV(filename: "REAL_INHALE")
 		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE")
 		clickBuffer = loadWAV(filename: "CLICK")
+		clickSoftBuffer = loadWAV(filename: "CLICK_SOFT")
 		
 		setupAudio()
 		
@@ -387,6 +397,7 @@ class AudioEngineManager: ObservableObject {
 		newState.placementIndex = self.placementIndex
 		newState.heartbeatVolume = Float(self.heartbeatVolume)
 		newState.clockVolume = Float(self.clockVolume)
+		newState.softClickVolume = Float(self.softClickVolume)
 		newState.brownVolume = Float(self.brownVolume)
 		newState.breathVolume = Float(self.breathVolume)
 		newState.clickVolume = Float(self.clickVolume)
@@ -398,6 +409,7 @@ class AudioEngineManager: ObservableObject {
 		newState.panBreathIndex = self.panBreathIndex
 		newState.panClickIndex = self.panClickIndex
 		newState.clockTypeIndex = self.clockTypeIndex
+		newState.clickPatternIndex = self.clickPatternIndex
 		newState.syncClock = self.syncClock
 		newState.syncClick = self.syncClick
 		newState.enableSlowdown = self.enableSlowdown
@@ -578,11 +590,13 @@ class AudioEngineManager: ObservableObject {
 		clkPlayIdx = Int.max
 		clkPlayIdx2 = Int.max
 		clickPlayIdx = Int.max
+		softClickPlayIdx = Int.max
 		smoothedVHeart = 0.0
 		smoothedVClock = 0.0
 		smoothedVBrown = 0.0
 		smoothedVBreath = 0.0
 		smoothedVClick = 0.0
+		smoothedVSoftClick = 0.0
 		smoothedVBinaural = 0.0
 		binauralPhaseL = 0.0
 		binauralPhaseR = 0.0
@@ -918,16 +932,29 @@ class AudioEngineManager: ObservableObject {
 		if !isPlaying { playStop() }
 		dynamicVolumeMultiplier = 1.0
 		var fadeStep = 0
-		let totalSteps = Int(sleepFadeMinutes * 60.0 * 10)
+		let totalSteps = Int(sleepFadeMinutes * 60.0 * 10) // Restored real-time duration logic
 		fadeTimer?.invalidate()
 		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
 			guard let self = self else { return }
 			fadeStep += 1
-			self.dynamicVolumeMultiplier = 1.0 - (Double(fadeStep) / Double(totalSteps))
+			let progress = Double(fadeStep) / Double(totalSteps)
+			self.dynamicVolumeMultiplier = 1.0 - progress
+			
+			if self.enableDeepSleepDive {
+				let startFreq = self.enableHSPMode ? 2500.0 : 20000.0
+				let targetCutoff = Float(startFreq - (startFreq - 400.0) * progress)
+				self.hspEqNode.bands[0].frequency = targetCutoff
+				self.hspEqNode.bands[0].bypass = false
+			} else {
+				self.hspEqNode.bands[0].frequency = self.enableHSPMode ? 2500.0 : 20000.0
+				self.hspEqNode.bands[0].bypass = !self.enableHSPMode
+			}
+			
 			if fadeStep >= totalSteps {
 				timer.invalidate()
 				if self.isPlaying { self.stopSoundscape(keepEngineAlive: false) }
 				self.dynamicVolumeMultiplier = 1.0
+				self.updateHSPMode() // Reset EQ after simulation finishes
 			}
 		}
 	}
@@ -1063,7 +1090,7 @@ class AudioEngineManager: ObservableObject {
 			let lubL = self.lubL; let dubL = self.dubL; let lubR = self.lubR; let dubR = self.dubR
 			let lubEnv = self.lubEnv; let dubEnv = self.dubEnv; let brownL = self.brownL; let brownR = self.brownR
 			let breathL = self.breathL; let breathR = self.breathR; let whooshL = self.whooshL; let whooshR = self.whooshR
-			let clk = self.clk; let click = self.clickBuffer; let realInhale = self.realInhaleBuffer; let realExhale = self.realExhaleBuffer
+			let clk = self.clk; let click = self.clickBuffer; let clickSoft = self.clickSoftBuffer; let realInhale = self.realInhaleBuffer; let realExhale = self.realExhaleBuffer
 			let nBeat = self.nBeat; let nNoise = self.nNoise
 			let config = self.profiles[state.selectedProfileIndex]
 			let placement = self.placementOptions[state.placementIndex]
@@ -1072,7 +1099,8 @@ class AudioEngineManager: ObservableObject {
 			
 			let targetVHeart = state.heartbeatVolume; let targetVClock = state.clockVolume
 			let targetVBrown = state.brownVolume; let targetVBreath = state.breathVolume
-			let targetVClick = state.clickVolume; let targetVBinaural = state.binauralVolume
+			let targetVClick = state.clickVolume; let targetVSoftClick = state.softClickVolume
+			let targetVBinaural = state.binauralVolume
 			
 			let smoothFactor: Float = 0.005
 			let dt = 1.0 / self.sampleRate
@@ -1086,11 +1114,12 @@ class AudioEngineManager: ObservableObject {
 				self.smoothedVBrown += (targetVBrown - self.smoothedVBrown) * smoothFactor
 				self.smoothedVBreath += (targetVBreath - self.smoothedVBreath) * smoothFactor
 				self.smoothedVClick += (targetVClick - self.smoothedVClick) * smoothFactor
+				self.smoothedVSoftClick += (targetVSoftClick - self.smoothedVSoftClick) * smoothFactor
 				self.smoothedVBinaural += (targetVBinaural - self.smoothedVBinaural) * smoothFactor
 				
 				let vHeart = self.smoothedVHeart; let vClock = self.smoothedVClock; let vBrown = self.smoothedVBrown
-				let vBreath = self.smoothedVBreath; let vClick = self.smoothedVClick; let vBinaural = self.smoothedVBinaural
-				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vBinaural * 0.4)
+				let vBreath = self.smoothedVBreath; let vClick = self.smoothedVClick; let vSoftClick = self.smoothedVSoftClick; let vBinaural = self.smoothedVBinaural
+				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vSoftClick * 0.3) + (vBinaural * 0.4)
 
 				let currentFrame = self.frameIdx + frame
 				let timeInSeconds = Double(currentFrame) / self.sampleRate
@@ -1123,7 +1152,11 @@ class AudioEngineManager: ObservableObject {
 					
 					if self.tBeat >= beatDuration {
 						self.tBeat -= beatDuration; self.beatCounter += 1; self.clkPlayIdx = 0
-						if state.syncClick { self.clickPlayIdx = 0 }
+						if state.syncClick {
+							if state.clickPatternIndex == 0 { self.clickPlayIdx = 0; self.softClickPlayIdx = 0 }
+							else if state.clickPatternIndex == 1 { self.clickPlayIdx = 0 }
+							else if state.clickPatternIndex == 2 { self.softClickPlayIdx = 0 }
+						}
 						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						if state.syncBreathing && !state.isBreathing {
 							let phaseBeat = self.beatCounter % 8
@@ -1142,6 +1175,10 @@ class AudioEngineManager: ObservableObject {
 					}
 					if self.tBeat >= config.dubDelay && self.tBeat - dt < config.dubDelay { DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) } }
 					if ticksPerBeat == 2 && self.tBeat >= (beatDuration / 2.0) && self.tBeat - dt < (beatDuration / 2.0) { self.clkPlayIdx2 = 0 }
+					if state.syncClick && self.tBeat >= (beatDuration / 2.0) && self.tBeat - dt < (beatDuration / 2.0) {
+						if state.clickPatternIndex == 1 { self.softClickPlayIdx = 0 }
+						else if state.clickPatternIndex == 2 { self.clickPlayIdx = 0 }
+					}
 					
 					let t = self.tBeat; let atk = 0.04; let rel = 0.02
 					var lEnv = exp(-config.lubDecay * t); var slEnv = exp(-config.subDecay * t)
@@ -1186,7 +1223,11 @@ class AudioEngineManager: ObservableObject {
 					self.tBeat += dt
 					if self.tBeat >= beatDuration {
 						self.tBeat -= beatDuration; self.beatCounter += 1; self.clkPlayIdx = 0
-						if state.syncClick { self.clickPlayIdx = 0 }
+						if state.syncClick {
+							if state.clickPatternIndex == 0 { self.clickPlayIdx = 0; self.softClickPlayIdx = 0 }
+							else if state.clickPatternIndex == 1 { self.clickPlayIdx = 0 }
+							else if state.clickPatternIndex == 2 { self.softClickPlayIdx = 0 }
+						}
 						DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 						if state.syncBreathing && !state.isBreathing {
 							let phaseBeat = self.beatCounter % 8
@@ -1249,9 +1290,24 @@ class AudioEngineManager: ObservableObject {
 					let clockType = self.clockOptions[state.clockTypeIndex]
 					let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
 					if ticksPerBeat == 2 && t >= (beatDuration / 2.0) && t - dt < (beatDuration / 2.0) { self.clkPlayIdx2 = 0 }
+					if state.syncClick && t >= (beatDuration / 2.0) && t - dt < (beatDuration / 2.0) {
+						if state.clickPatternIndex == 1 { self.softClickPlayIdx = 0 }
+						else if state.clickPatternIndex == 2 { self.clickPlayIdx = 0 }
+					}
 				}
 				
-				if !state.syncClick && currentFrame % Int(self.sampleRate) == 0 { self.clickPlayIdx = 0 }
+				if !state.syncClick {
+					let halfSec = Int(self.sampleRate / 2.0)
+					if currentFrame % Int(self.sampleRate) == 0 {
+						if state.clickPatternIndex == 0 { self.clickPlayIdx = 0; self.softClickPlayIdx = 0 }
+						else if state.clickPatternIndex == 1 { self.clickPlayIdx = 0 }
+						else if state.clickPatternIndex == 2 { self.softClickPlayIdx = 0 }
+					} else if currentFrame % Int(self.sampleRate) == halfSec {
+						if state.clickPatternIndex == 1 { self.softClickPlayIdx = 0 }
+						else if state.clickPatternIndex == 2 { self.clickPlayIdx = 0 }
+					}
+				}
+				
 				let idxNoise = currentFrame % nNoise
 				let wVol = Float(config.whooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
@@ -1275,8 +1331,15 @@ class AudioEngineManager: ObservableObject {
 					let cSample = click[self.clickPlayIdx]
 					let posClick = self.getPanPos(mode: state.panClickIndex, time: tChunk)
 					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vClick * 0.8)
-					chunkClickL = pannedClick.0; chunkClickR = pannedClick.1
+					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
 					self.clickPlayIdx += 1
+				}
+				if vSoftClick > 0 && self.softClickPlayIdx < clickSoft.count {
+					let cSample = clickSoft[self.softClickPlayIdx]
+					let posClick = self.getPanPos(mode: state.panClickIndex, time: tChunk)
+					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8)
+					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
+					self.softClickPlayIdx += 1
 				}
 				
 				var chunkBL: Float = 0; var chunkBR: Float = 0
@@ -1335,7 +1398,8 @@ class AudioEngineManager: ObservableObject {
 						breathSampleL = breathL[idxNoise]; breathSampleR = breathR[idxNoise]
 					}
 					let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
-					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * 2.5)
+					let realBreathVolMult: Float = state.useRealBreathing ? 10.0 : 2.5
+					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult)
 					chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 				}
 				
@@ -1810,6 +1874,17 @@ struct GeneratorView: View {
 				VStack(alignment: .leading) {
 					Text("Click Track").accessibilityHidden(true)
 					Slider(value: $engine.clickVolume, in: 0...1).accessibilityLabel("Click Volume")
+					
+					Text("Soft Click Track").accessibilityHidden(true)
+					Slider(value: $engine.softClickVolume, in: 0...1).accessibilityLabel("Soft Click Volume")
+					
+					Picker("Click Pattern", selection: $engine.clickPatternIndex) {
+						Text("Simultaneous").tag(0)
+						Text("Tick-Tock (Normal First)").tag(1)
+						Text("Tock-Tick (Soft First)").tag(2)
+					}
+					.pickerStyle(MenuPickerStyle())
+					
 					Toggle("Sync to Heartbeat", isOn: $engine.syncClick)
 				}.padding(.vertical, 4)
 				
