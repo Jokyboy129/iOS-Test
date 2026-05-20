@@ -128,6 +128,7 @@ class AudioEngineManager: ObservableObject {
 	let reverbNode = AVAudioUnitReverb()
 	let preReverbMixer = AVAudioMixerNode()
 	let importedMixer = AVAudioMixerNode()
+	let hspEqNode = AVAudioUnitEQ(numberOfBands: 1)
 	
 	let breathingNode = AVAudioPlayerNode()
 	let anchorNode = AVAudioPlayerNode()
@@ -160,7 +161,7 @@ class AudioEngineManager: ObservableObject {
 		HeartbeatProfile(name: "Soft Pillowy Pulse (62 BPM)", bpm: 62, lubBase: 40, lubDrop: 15, lubDecay: 25, dubBase: 50, dubDrop: 20, dubDecay: 30, dubDelay: 0.28, subFreq: 32, subVol: 0.35, subDecay: 6, whooshVol: 0.20, noiseLpf: 250)
 	]
 	
-	let panOptions = ["Center", "Left", "Right", "Soft Left", "Soft Right", "1 Minute Slow Shift", "5 Minute Slow Shift"]
+	let panOptions = ["Center", "Left", "Right", "Soft Left", "Soft Right", "1 Minute Slow Shift", "5 Minute Slow Shift", "30 Minute Extra Slow Shift", "1 Hour Extra Slow Shift"]
 	let clockOptions = ["Quartz Wall Clock", "Pocket Watch", "Grandfather Clock", "Metronome"]
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
 	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
@@ -200,6 +201,7 @@ class AudioEngineManager: ObservableObject {
 	@Published var reverbIndex: Int { didSet { save("reverbIndex", reverbIndex); updateReverb() } }
 	@Published var voiceInReverb: Bool { didSet { save("voiceInReverb", voiceInReverb); updateVoiceRouting() } }
 	@Published var importedAudioInReverb: Bool { didSet { save("importedAudioInReverb", importedAudioInReverb); reloadImportedTracksRouting() } }
+	@Published var enableHSPMode: Bool { didSet { save("enableHSPMode", enableHSPMode); updateHSPMode() } }
 	
 	@Published var enableSlowdown: Bool { didSet { save("enableSlowdown", enableSlowdown); syncRenderState() } }
 	@Published var targetBPM: Double { didSet { save("targetBPM", targetBPM); syncRenderState() } }
@@ -316,6 +318,7 @@ class AudioEngineManager: ObservableObject {
 		self.reverbIndex = ud.integer(forKey: "reverbIndex")
 		self.voiceInReverb = ud.object(forKey: "voiceInReverb") == nil ? false : ud.bool(forKey: "voiceInReverb")
 		self.importedAudioInReverb = ud.object(forKey: "importedAudioInReverb") == nil ? false : ud.bool(forKey: "importedAudioInReverb")
+		self.enableHSPMode = ud.bool(forKey: "enableHSPMode")
 		
 		self.enableSlowdown = ud.bool(forKey: "enableSlowdown")
 		self.targetBPM = ud.object(forKey: "targetBPM") == nil ? 40.0 : ud.double(forKey: "targetBPM")
@@ -331,6 +334,10 @@ class AudioEngineManager: ObservableObject {
 		self.meditationPaths = ud.stringArray(forKey: "meditationPaths") ?? []
 		self.meditationIsAppleMusic = ud.bool(forKey: "meditationIsAppleMusic")
 		self.meditationNameStorage = ud.string(forKey: "meditationNameStorage") ?? "None"
+		
+		hspEqNode.bands[0].filterType = .lowPass
+		hspEqNode.bands[0].frequency = 2500.0
+		hspEqNode.bands[0].bypass = !self.enableHSPMode
 		
 		syncRenderState()
 		applyAudioSessionSettings()
@@ -490,6 +497,10 @@ class AudioEngineManager: ObservableObject {
 		}
 	}
 	
+	func updateHSPMode() {
+		hspEqNode.bands[0].bypass = !enableHSPMode
+	}
+	
 	func updateVoiceRouting() {
 		guard sourceNode != nil else { return }
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
@@ -501,8 +512,8 @@ class AudioEngineManager: ObservableObject {
 			engine.connect(breathingNode, to: preReverbMixer, format: format)
 			engine.connect(anchorNode, to: preReverbMixer, format: format)
 		} else {
-			engine.connect(breathingNode, to: engine.mainMixerNode, format: format)
-			engine.connect(anchorNode, to: engine.mainMixerNode, format: format)
+			engine.connect(breathingNode, to: hspEqNode, format: format)
+			engine.connect(anchorNode, to: hspEqNode, format: format)
 		}
 	}
 	
@@ -1237,15 +1248,18 @@ class AudioEngineManager: ObservableObject {
 			engine.attach(reverbNode)
 			engine.attach(breathingNode)
 			engine.attach(anchorNode)
+			engine.attach(hspEqNode)
 			
 			engine.connect(node, to: preReverbMixer, format: format)
 			engine.connect(importedMixer, to: preReverbMixer, format: format)
 			
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
-			engine.connect(reverbNode, to: engine.mainMixerNode, format: format)
+			engine.connect(reverbNode, to: hspEqNode, format: format)
+			engine.connect(hspEqNode, to: engine.mainMixerNode, format: format)
 			
 			updateVoiceRouting()
 			updateReverb()
+			updateHSPMode()
 		}
 	}
 	
@@ -1261,6 +1275,8 @@ class AudioEngineManager: ObservableObject {
 			var period: Float = 60.0
 			if option.contains("1 Minute") { period = 60.0 }
 			else if option.contains("5 Minute") { period = 300.0 }
+			else if option.contains("30 Minute") { period = 1800.0 }
+			else if option.contains("1 Hour") { period = 3600.0 }
 			return sin(2.0 * Float.pi * time / period)
 		}
 	}
@@ -1849,6 +1865,11 @@ struct SettingsView: View {
 	@ObservedObject var engine: AudioEngineManager
 	var body: some View {
 		Form {
+			Section(header: Text("Highly Sensitive Person (HSP) Features")) {
+				Toggle("HSP Acoustic Softening", isOn: $engine.enableHSPMode)
+					.accessibilityHint("Applies a global low-pass filter to muffle harsh high frequencies and soften the overall soundscape.")
+			}
+			
 			Section(header: Text("Acoustics & Space")) {
 				Picker("Room Reverb", selection: $engine.reverbIndex) {
 					ForEach(0..<engine.reverbOptions.count, id: \.self) { index in
