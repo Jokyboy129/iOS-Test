@@ -152,7 +152,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	
 	var hapticEngine: CHHapticEngine?
 	
-	@Published var isPlaying = false { didSet { syncRenderState() } }
+	@Published var isPlaying: Bool = false { didSet { syncRenderState() } }
 	@Published var importedTracks: [ImportedTrack] = []
 	
 	var dynamicVolumeMultiplier: Double = 1.0 { didSet { updateVolumes() } }
@@ -183,58 +183,58 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	
 	private var renderState = AudioRenderState()
 	
-	@Published var selectedProfileIndex: Int { didSet { save("selectedProfileIndex", selectedProfileIndex); resetDynamicBPM(); rebuildPrototypes(); updateNowPlaying(); syncRenderState() } }
-	@Published var placementIndex: Int { didSet { save("placementIndex", placementIndex); rebuildPrototypes(); syncRenderState() } }
-	@Published var masterVolume: Double { didSet { save("masterVolume", masterVolume); updateVolumes() } }
+	@Published var selectedProfileIndex: Int = 0 { didSet { save("selectedProfileIndex", selectedProfileIndex); resetDynamicBPM(); rebuildPrototypes(); updateNowPlaying(); syncRenderState() } }
+	@Published var placementIndex: Int = 0 { didSet { save("placementIndex", placementIndex); rebuildPrototypes(); syncRenderState() } }
+	@Published var masterVolume: Double = 1.0 { didSet { save("masterVolume", masterVolume); updateVolumes() } }
 	
-	@Published var heartbeatVolume: Double { didSet { save("heartbeatVolume", heartbeatVolume); syncRenderState() } }
-	@Published var clockVolume: Double { didSet { save("clockVolume", clockVolume); syncRenderState() } }
-	@Published var softClickVolume: Double { didSet { save("softClickVolume", softClickVolume); syncRenderState() } }
-	@Published var brownVolume: Double { didSet { save("brownVolume", brownVolume); syncRenderState() } }
-	@Published var breathVolume: Double { didSet { save("breathVolume", breathVolume); syncRenderState() } }
-	@Published var clickVolume: Double { didSet { save("clickVolume", clickVolume); syncRenderState() } }
-	@Published var binauralVolume: Double { didSet { save("binauralVolume", binauralVolume); syncRenderState() } }
+	@Published var heartbeatVolume: Double = 0.0 { didSet { save("heartbeatVolume", heartbeatVolume); syncRenderState() } }
+	@Published var clockVolume: Double = 0.0 { didSet { save("clockVolume", clockVolume); syncRenderState() } }
+	@Published var softClickVolume: Double = 0.0 { didSet { save("softClickVolume", softClickVolume); syncRenderState() } }
+	@Published var brownVolume: Double = 0.0 { didSet { save("brownVolume", brownVolume); syncRenderState() } }
+	@Published var breathVolume: Double = 0.0 { didSet { save("breathVolume", breathVolume); syncRenderState() } }
+	@Published var clickVolume: Double = 0.0 { didSet { save("clickVolume", clickVolume); syncRenderState() } }
+	@Published var binauralVolume: Double = 0.0 { didSet { save("binauralVolume", binauralVolume); syncRenderState() } }
 	
-	@Published var rainVolume: Double { didSet { save("rainVolume", rainVolume); updateVolumes() } }
-	@Published var organicHeartbeatVolume: Double { didSet { save("organicHeartbeatVolume", organicHeartbeatVolume); updateVolumes() } }
+	@Published var rainVolume: Double = 0.0 { didSet { save("rainVolume", rainVolume); updateVolumes() } }
+	@Published var organicHeartbeatVolume: Double = 0.0 { didSet { save("organicHeartbeatVolume", organicHeartbeatVolume); updateVolumes() } }
 	
-	@Published var panHeartIndex: Int { didSet { save("panHeartIndex", panHeartIndex); syncRenderState() } }
-	@Published var panClockIndex: Int { didSet { save("panClockIndex", panClockIndex); syncRenderState() } }
-	@Published var panBrownIndex: Int { didSet { save("panBrownIndex", panBrownIndex); syncRenderState() } }
-	@Published var panBreathIndex: Int { didSet { save("panBreathIndex", panBreathIndex); syncRenderState() } }
-	@Published var panClickIndex: Int { didSet { save("panClickIndex", panClickIndex); syncRenderState() } }
+	@Published var panHeartIndex: Int = 0 { didSet { save("panHeartIndex", panHeartIndex); syncRenderState() } }
+	@Published var panClockIndex: Int = 0 { didSet { save("panClockIndex", panClockIndex); syncRenderState() } }
+	@Published var panBrownIndex: Int = 0 { didSet { save("panBrownIndex", panBrownIndex); syncRenderState() } }
+	@Published var panBreathIndex: Int = 0 { didSet { save("panBreathIndex", panBreathIndex); syncRenderState() } }
+	@Published var panClickIndex: Int = 0 { didSet { save("panClickIndex", panClickIndex); syncRenderState() } }
 	
-	@Published var clockTypeIndex: Int { didSet { save("clockTypeIndex", clockTypeIndex); rebuildPrototypes(); syncRenderState() } }
-	@Published var clickPatternIndex: Int { didSet { save("clickPatternIndex", clickPatternIndex); syncRenderState() } }
-	@Published var binauralTypeIndex: Int { didSet { save("binauralTypeIndex", binauralTypeIndex); syncRenderState() } }
-	@Published var syncClock: Bool { didSet { save("syncClock", syncClock); syncRenderState() } }
-	@Published var syncClick: Bool { didSet { save("syncClick", syncClick); syncRenderState() } }
-	@Published var enableRSA: Bool { didSet { save("enableRSA", enableRSA); syncRenderState() } }
+	@Published var clockTypeIndex: Int = 0 { didSet { save("clockTypeIndex", clockTypeIndex); rebuildPrototypes(); syncRenderState() } }
+	@Published var clickPatternIndex: Int = 0 { didSet { save("clickPatternIndex", clickPatternIndex); syncRenderState() } }
+	@Published var binauralTypeIndex: Int = 0 { didSet { save("binauralTypeIndex", binauralTypeIndex); syncRenderState() } }
+	@Published var syncClock: Bool = false { didSet { save("syncClock", syncClock); syncRenderState() } }
+	@Published var syncClick: Bool = true { didSet { save("syncClick", syncClick); syncRenderState() } }
+	@Published var enableRSA: Bool = false { didSet { save("enableRSA", enableRSA); syncRenderState() } }
 	
-	@Published var mixWithOthers: Bool { didSet { save("mixWithOthers", mixWithOthers); applyAudioSessionSettings() } }
-	@Published var useWhisper: Bool { didSet { save("useWhisper", useWhisper) } }
-	@Published var useRealBreathing: Bool { didSet { save("useRealBreathing", useRealBreathing); syncRenderState() } }
+	@Published var mixWithOthers: Bool = false { didSet { save("mixWithOthers", mixWithOthers); applyAudioSessionSettings() } }
+	@Published var useWhisper: Bool = false { didSet { save("useWhisper", useWhisper) } }
+	@Published var useRealBreathing: Bool = true { didSet { save("useRealBreathing", useRealBreathing); syncRenderState() } }
 	
-	@Published var enableHaptics: Bool { didSet { save("enableHaptics", enableHaptics) } }
-	@Published var enableEnhancedAnchors: Bool { didSet { save("enableEnhancedAnchors", enableEnhancedAnchors) } }
-	@Published var reverbIndex: Int { didSet { save("reverbIndex", reverbIndex); updateReverb() } }
-	@Published var voiceInReverb: Bool { didSet { save("voiceInReverb", voiceInReverb); updateVoiceRouting() } }
-	@Published var importedAudioInReverb: Bool { didSet { save("importedAudioInReverb", importedAudioInReverb); reloadImportedTracksRouting() } }
-	@Published var enableHSPMode: Bool { didSet { save("enableHSPMode", enableHSPMode); updateHSPMode() } }
-	@Published var meditationInHSP: Bool { didSet { save("meditationInHSP", meditationInHSP); loadMeditationTracks() } }
-	@Published var enableDeepSleepDive: Bool { didSet { save("enableDeepSleepDive", enableDeepSleepDive) } }
+	@Published var enableHaptics: Bool = false { didSet { save("enableHaptics", enableHaptics) } }
+	@Published var enableEnhancedAnchors: Bool = false { didSet { save("enableEnhancedAnchors", enableEnhancedAnchors) } }
+	@Published var reverbIndex: Int = 0 { didSet { save("reverbIndex", reverbIndex); updateReverb() } }
+	@Published var voiceInReverb: Bool = false { didSet { save("voiceInReverb", voiceInReverb); updateVoiceRouting() } }
+	@Published var importedAudioInReverb: Bool = false { didSet { save("importedAudioInReverb", importedAudioInReverb); reloadImportedTracksRouting() } }
+	@Published var enableHSPMode: Bool = false { didSet { save("enableHSPMode", enableHSPMode); updateHSPMode() } }
+	@Published var meditationInHSP: Bool = true { didSet { save("meditationInHSP", meditationInHSP); loadMeditationTracks() } }
+	@Published var enableDeepSleepDive: Bool = false { didSet { save("enableDeepSleepDive", enableDeepSleepDive) } }
 	
-	@Published var enableSlowdown: Bool { didSet { save("enableSlowdown", enableSlowdown); syncRenderState() } }
-	@Published var targetBPM: Double { didSet { save("targetBPM", targetBPM); syncRenderState() } }
-	@Published var slowdownMinutes: Double { didSet { save("slowdownMinutes", slowdownMinutes); syncRenderState() } }
+	@Published var enableSlowdown: Bool = false { didSet { save("enableSlowdown", enableSlowdown); syncRenderState() } }
+	@Published var targetBPM: Double = 40.0 { didSet { save("targetBPM", targetBPM); syncRenderState() } }
+	@Published var slowdownMinutes: Double = 30.0 { didSet { save("slowdownMinutes", slowdownMinutes); syncRenderState() } }
 	
-	@Published var syncBreathing: Bool { didSet { save("syncBreathing", syncBreathing); syncRenderState() } }
+	@Published var syncBreathing: Bool = false { didSet { save("syncBreathing", syncBreathing); syncRenderState() } }
 	@Published var isBreathing: Bool = false { didSet { syncRenderState() } }
 	@Published var manualBreathState: Int = 0 { didSet { syncRenderState() } }
 	
-	@Published var savedTracksJSON: Data { didSet { save("savedTracksJSON", savedTracksJSON) } }
+	@Published var savedTracksJSON: Data = Data() { didSet { save("savedTracksJSON", savedTracksJSON) } }
 	
-	@Published var enableSleepTimer: Bool { 
+	@Published var enableSleepTimer: Bool = false { 
 		didSet { 
 			save("enableSleepTimer", enableSleepTimer) 
 			if enableSleepTimer && isPlaying && sleepTimerStartDate == nil {
@@ -242,14 +242,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			}
 		} 
 	}
-	@Published var sleepTimerHours: Double { didSet { save("sleepTimerHours", sleepTimerHours) } }
-	@Published var sleepFadeMinutes: Double { didSet { save("sleepFadeMinutes", sleepFadeMinutes) } }
+	@Published var sleepTimerHours: Double = 3.0 { didSet { save("sleepTimerHours", sleepTimerHours) } }
+	@Published var sleepFadeMinutes: Double = 45.0 { didSet { save("sleepFadeMinutes", sleepFadeMinutes) } }
 	
 	var sleepTimerStartDate: Date?
 	
-	@Published var meditationPaths: [String] { didSet { save("meditationPaths", meditationPaths) } }
-	@Published var meditationIsAppleMusic: Bool { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
-	@Published var meditationNameStorage: String { didSet { save("meditationNameStorage", meditationNameStorage) } }
+	@Published var meditationPaths: [String] = [] { didSet { save("meditationPaths", meditationPaths) } }
+	@Published var meditationIsAppleMusic: Bool = false { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
+	@Published var meditationNameStorage: String = "None" { didSet { save("meditationNameStorage", meditationNameStorage) } }
 	
 	var isMeditationActive = false
 	var postMeditationPhase = false
@@ -1459,7 +1459,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: postReverbMixer, format: format)
-			engine.connect(meditationPlayerNode, to: postReverbMixer, format: nil)
+			engine.connect(meditationPlayerNode, to: postReverbMixer, format: format)
 			engine.connect(postReverbMixer, to: hspEqNode, format: format)
 			engine.connect(hspEqNode, to: engine.mainMixerNode, format: format)
 			
