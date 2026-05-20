@@ -228,6 +228,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var enableRSA: Bool = false { didSet { save("enableRSA", enableRSA); syncRenderState() } }
 
 	@Published var mixWithOthers: Bool = false { didSet { save("mixWithOthers", mixWithOthers); applyAudioSessionSettings() } }
+	@Published var fadeToSilentOnHeadphoneRemoval: Bool = false { didSet { save("fadeToSilentOnHeadphoneRemoval", fadeToSilentOnHeadphoneRemoval) } }
 	@Published var useWhisper: Bool = false { didSet { save("useWhisper", useWhisper) } }
 	@Published var useRealBreathing: Bool = true { didSet { save("useRealBreathing", useRealBreathing); syncRenderState() } }
 
@@ -280,6 +281,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var wasPlayingBeforeInterruption = false
 	private var wasAlarmRingingBeforeInterruption = false
 	private var suppressRemotePauseUntil = Date.distantPast
+	private var headphoneRemovalFadeTimer: Timer?
+	private var headphoneRemovalSilentMode = false
 
 	@Published var meditationPaths: [String] = [] { didSet { save("meditationPaths", meditationPaths) } }
 	@Published var meditationIsAppleMusic: Bool = false { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
@@ -384,6 +387,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.enableRSA = ud.bool(forKey: "enableRSA")
 
 		self.mixWithOthers = ud.bool(forKey: "mixWithOthers")
+		self.fadeToSilentOnHeadphoneRemoval = ud.bool(forKey: "fadeToSilentOnHeadphoneRemoval")
 		self.useWhisper = ud.bool(forKey: "useWhisper")
 		self.useRealBreathing = ud.object(forKey: "useRealBreathing") == nil ? true : ud.bool(forKey: "useRealBreathing")
 
@@ -588,7 +592,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	}
 
 	private func updateSilentBackgroundAudio() {
-		let shouldKeepAlive = isPlaying || (enableMorningAlarm && alarmAutomationArmed && morningAlarmPhase != .idle)
+		let shouldKeepAlive = isPlaying || headphoneRemovalSilentMode || (enableMorningAlarm && alarmAutomationArmed && morningAlarmPhase != .idle)
 		if shouldKeepAlive {
 			ensureSilentBackgroundAudio()
 		} else {
@@ -1243,6 +1247,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	}
 
 	func stopSoundscape(keepEngineAlive: Bool) {
+		headphoneRemovalFadeTimer?.invalidate()
+		headphoneRemovalFadeTimer = nil
 		rainPlayer?.pause()
 		organicHeartbeatPlayer?.pause()
 		for track in importedTracks { track.pause() }
@@ -1253,6 +1259,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		UIAccessibility.post(notification: .announcement, argument: "Soundscape halted.")
 
 		if !keepEngineAlive {
+			headphoneRemovalSilentMode = false
 			engine.pause()
 		}
 		updateSilentBackgroundAudio()
@@ -1927,6 +1934,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	private func startSoundscape(startMuted: Bool, announcement: String?, includeMeditation: Bool) {
 		do {
+			headphoneRemovalFadeTimer?.invalidate()
+			headphoneRemovalFadeTimer = nil
+			headphoneRemovalSilentMode = false
 			applyAudioSessionSettings()
 
 			if sourceNode == nil { setupAudio() }
@@ -1991,6 +2001,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 		commandCenter.pauseCommand.addTarget { [weak self] _ in
 			guard let self = self else { return .commandFailed }
+			if self.fadeToSilentOnHeadphoneRemoval && self.isPlaying {
+				self.fadeToSilentAfterHeadphoneRemoval()
+				return .success
+			}
 			if self.isPlaying || self.isAlarmRinging || Date() < self.suppressRemotePauseUntil {
 				self.resumeAfterRouteChange()
 				return .success
@@ -1999,6 +2013,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 		commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
 			guard let self = self else { return .commandFailed }
+			if self.fadeToSilentOnHeadphoneRemoval && self.isPlaying {
+				self.fadeToSilentAfterHeadphoneRemoval()
+				return .success
+			}
 			if self.isPlaying || self.isAlarmRinging {
 				self.resumeAfterRouteChange()
 				return .success
@@ -2041,6 +2059,37 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		wasPlayingBeforeInterruption = false
 		wasAlarmRingingBeforeInterruption = false
 		updateSilentBackgroundAudio()
+	}
+
+	private func fadeToSilentAfterHeadphoneRemoval() {
+		guard isPlaying else {
+			updateSilentBackgroundAudio()
+			return
+		}
+
+		headphoneRemovalFadeTimer?.invalidate()
+		let keepAlarmAlive = enableMorningAlarm && alarmAutomationArmed
+		let startMultiplier = dynamicVolumeMultiplier
+		var elapsed: TimeInterval = 0
+		let duration: TimeInterval = 10.0
+		ensureSilentBackgroundAudio()
+
+		headphoneRemovalFadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+			guard let self = self else {
+				timer.invalidate()
+				return
+			}
+			elapsed += 0.1
+			let progress = min(1.0, elapsed / duration)
+			self.dynamicVolumeMultiplier = startMultiplier * (1.0 - progress)
+
+			if progress >= 1.0 {
+				timer.invalidate()
+				self.headphoneRemovalFadeTimer = nil
+				self.headphoneRemovalSilentMode = keepAlarmAlive
+				self.stopSoundscape(keepEngineAlive: keepAlarmAlive)
+			}
+		}
 	}
 
 	private func resumeAfterRouteChange() {
@@ -2092,7 +2141,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			guard let self = self, let userInfo = notification.userInfo,
 				  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-			if reason == .oldDeviceUnavailable || reason == .routeConfigurationChange || reason == .categoryChange || reason == .override {
+			if reason == .oldDeviceUnavailable && self.fadeToSilentOnHeadphoneRemoval {
+				self.fadeToSilentAfterHeadphoneRemoval()
+			} else if reason == .oldDeviceUnavailable || reason == .routeConfigurationChange || reason == .categoryChange || reason == .override {
 				self.resumeAfterRouteChange()
 				DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
 					self.resumeAfterRouteChange()
@@ -2558,6 +2609,8 @@ struct SettingsView: View {
 			Section(header: Text("Audio Behavior")) {
 				Toggle("Mix with other apps", isOn: $engine.mixWithOthers)
 					.accessibilityHint("Allows Sleep Engine to play while watching YouTube or listening to podcasts.")
+				Toggle("Fade to Silent when Headphones Disconnect", isOn: $engine.fadeToSilentOnHeadphoneRemoval)
+					.accessibilityHint("Fades the soundscape out over 10 seconds when headphones are removed, then keeps only the silent alarm keeper active.")
 			}
 		}
 	}
