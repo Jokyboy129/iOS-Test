@@ -2462,11 +2462,16 @@ struct BreathingView: View {
 }
 
 struct SleepTimerView: View {
+	private enum FileImportTarget {
+		case meditation
+		case alarm
+	}
+
 	@ObservedObject var engine: AudioEngineManager
-	@State private var showingMeditationFilePicker = false
 	@State private var showingMeditationMusicPicker = false
-	@State private var showingAlarmFilePicker = false
 	@State private var showingAlarmMusicPicker = false
+	@State private var showingFilePicker = false
+	@State private var fileImportTarget: FileImportTarget?
 
 	var body: some View {
 		NavigationView {
@@ -2501,7 +2506,7 @@ struct SleepTimerView: View {
 							Text(engine.alarmNameStorage)
 							Spacer()
 							Menu("Alarm Sound") {
-								Button("From Files") { showingAlarmFilePicker = true }
+								Button("From Files") { presentFilePicker(for: .alarm) }
 								Button("From Apple Music") { showingAlarmMusicPicker = true }
 								if !engine.alarmPath.isEmpty {
 									Button("Clear", role: .destructive) { engine.clearAlarmSound() }
@@ -2520,7 +2525,7 @@ struct SleepTimerView: View {
 						Text(engine.meditationNameStorage)
 						Spacer()
 						Menu("Select Meditation") {
-							Button("From Files") { showingMeditationFilePicker = true }
+							Button("From Files") { presentFilePicker(for: .meditation) }
 							Button("From Apple Music") { showingMeditationMusicPicker = true }
 							if !engine.meditationPaths.isEmpty {
 								Button("Clear", role: .destructive) { engine.clearMeditation() }
@@ -2540,15 +2545,17 @@ struct SleepTimerView: View {
 			}
 			.navigationTitle("Sleep Settings")
 			.navigationBarTitleDisplayMode(.inline)
-			.fileImporter(isPresented: $showingMeditationFilePicker, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+			.fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+				defer { fileImportTarget = nil }
 				switch result {
-				case .success(let urls): if let url = urls.first { engine.addFile(url: url, isMeditation: true) }
-				case .failure(let error): print(error)
-				}
-			}
-			.fileImporter(isPresented: $showingAlarmFilePicker, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
-				switch result {
-				case .success(let urls): if let url = urls.first { engine.addAlarmFile(url: url) }
+				case .success(let urls):
+					guard let url = urls.first, let target = fileImportTarget else { return }
+					switch target {
+					case .meditation:
+						engine.addFile(url: url, isMeditation: true)
+					case .alarm:
+						engine.addAlarmFile(url: url)
+					}
 				case .failure(let error): print(error)
 				}
 			}
@@ -2564,6 +2571,13 @@ struct SleepTimerView: View {
 					}
 				}
 			}
+		}
+	}
+
+	private func presentFilePicker(for target: FileImportTarget) {
+		fileImportTarget = target
+		DispatchQueue.main.async {
+			showingFilePicker = true
 		}
 	}
 }
