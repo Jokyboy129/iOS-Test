@@ -192,7 +192,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	let clockOptions = ["Quartz Wall Clock", "Pocket Watch", "Grandfather Clock", "Metronome"]
 	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
 	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
-	let reverbOptions = ["Dry / No Reverb", "Small Room", "Medium Hall", "Large Hall", "Cathedral"]
+	let reverbOptions = ["Dry / No Reverb", "Small Room", "Medium Hall", "Large Hall", "Cathedral", "Medium Room", "Large Room", "Large Room 2"]
 	let binauralOptions = ["Delta Waves (2Hz - Deep Sleep)", "Theta Waves (6Hz - Dreaming)", "Alpha Waves (10Hz - Relaxation)"]
 
 	private var renderState = AudioRenderState()
@@ -623,11 +623,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			reverbNode.loadFactoryPreset(.mediumHall)
 			reverbNode.wetDryMix = 40
 		case 3:
-			reverbNode.loadFactoryPreset(.largeRoom)
+			reverbNode.loadFactoryPreset(.largeHall)
 			reverbNode.wetDryMix = 50
 		case 4:
 			reverbNode.loadFactoryPreset(.cathedral)
 			reverbNode.wetDryMix = 60
+		case 5:
+			reverbNode.loadFactoryPreset(.mediumRoom)
+			reverbNode.wetDryMix = 35
+		case 6:
+			reverbNode.loadFactoryPreset(.largeRoom)
+			reverbNode.wetDryMix = 45
+		case 7:
+			reverbNode.loadFactoryPreset(.largeRoom2)
+			reverbNode.wetDryMix = 45
 		default:
 			reverbNode.wetDryMix = 0
 		}
@@ -1161,8 +1170,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let dayKey = dayKey(for: alarmDate)
 		if lastAlarmFireDayKey == dayKey { return }
 
-		let fadeDuration = max(1.0, morningSoundscapeFadeMinutes * 60.0)
-		let fadeStart = alarmDate.addingTimeInterval(-fadeDuration)
+		let shouldFadeInSoundscape = morningSoundscapeFadeMinutes > 0
+		let fadeDuration = morningSoundscapeFadeMinutes * 60.0
+		let fadeStart = shouldFadeInSoundscape ? alarmDate.addingTimeInterval(-fadeDuration) : alarmDate
 
 		if now < fadeStart {
 			morningAlarmPhase = .waiting
@@ -1170,7 +1180,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			return
 		}
 
-		if now >= fadeStart && now < alarmDate {
+		if shouldFadeInSoundscape && now >= fadeStart && now < alarmDate {
 			if !isPlaying {
 				startSoundscape(startMuted: true, announcement: nil, includeMeditation: false)
 			}
@@ -1188,10 +1198,12 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				beginAlarmCrossfade()
 			}
 			let progress = min(1.0, max(0.0, now.timeIntervalSince(alarmDate) / alarmCrossfadeDuration))
-			dynamicVolumeMultiplier = 1.0
-			morningFadeMultiplier = 1.0 - progress
+			if shouldFadeInSoundscape {
+				dynamicVolumeMultiplier = 1.0
+			}
+			morningFadeMultiplier = (shouldFadeInSoundscape || isPlaying) ? 1.0 - progress : 0.0
 			alarmFadeMultiplier = progress
-			if !isPlaying {
+			if shouldFadeInSoundscape && !isPlaying {
 				startSoundscape(startMuted: false, announcement: nil, includeMeditation: false)
 			}
 			updateSilentBackgroundAudio()
@@ -2495,8 +2507,8 @@ struct SleepTimerView: View {
 					if engine.enableMorningAlarm {
 						DatePicker("Alarm Time", selection: $engine.morningAlarmDate, displayedComponents: .hourAndMinute)
 						VStack(alignment: .leading) {
-							Text("Soundscape fade in: \(Int(engine.morningSoundscapeFadeMinutes)) minutes")
-							Slider(value: $engine.morningSoundscapeFadeMinutes, in: 1...90, step: 1)
+							Text(engine.morningSoundscapeFadeMinutes == 0 ? "Soundscape fade in: Off" : "Soundscape fade in: \(Int(engine.morningSoundscapeFadeMinutes)) minutes")
+							Slider(value: $engine.morningSoundscapeFadeMinutes, in: 0...90, step: 1)
 						}
 						VStack(alignment: .leading) {
 							Text("Alarm Volume")
