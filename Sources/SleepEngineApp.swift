@@ -441,11 +441,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 		proximityEqNode.bands[0].filterType = .lowShelf
 		proximityEqNode.bands[0].frequency = 250.0
-		proximityEqNode.bands[0].gain = 6.0
+		proximityEqNode.bands[0].gain = 8.0
+		proximityEqNode.bands[0].bypass = false
 		
 		proximityEqNode.bands[1].filterType = .highShelf
 		proximityEqNode.bands[1].frequency = 6000.0
-		proximityEqNode.bands[1].gain = 4.0
+		proximityEqNode.bands[1].gain = 5.0
+		proximityEqNode.bands[1].bypass = false
 		
 		proximityEqNode.bypass = !self.enableIntimateMode
 
@@ -469,6 +471,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		resetDynamicBPM()
 		rebuildPrototypes()
 		updateVolumes()
+		updateProximityEQ()
 		startTimersMonitor()
 	}
 
@@ -670,6 +673,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	func updateProximityEQ() {
 		proximityEqNode.bypass = !enableIntimateMode
+		proximityEqNode.globalGain = enableIntimateMode ? 4.0 : 0.0
 	}
 
 	func updateHSPMode() {
@@ -1654,7 +1658,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let wVol = Float(config.whooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
-				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart, intimate: state.enableIntimateMode)
+				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart)
 
 				var chunkCL: Float = 0; var chunkCR: Float = 0
 				if vClock > 0 {
@@ -1664,7 +1668,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						if self.clkPlayIdx2 < clk.count { clkWave += clk[self.clkPlayIdx2]; self.clkPlayIdx2 += 1 }
 					} else { clkWave = clk[currentFrame % clk.count] }
 					let posC = self.getPanPos(mode: state.panClockIndex, time: tChunk)
-					let pannedC = self.applyStereoPan(inL: clkWave, inR: clkWave, pos: posC, vol: vClock * 0.4, intimate: state.enableIntimateMode)
+					let pannedC = self.applyStereoPan(inL: clkWave, inR: clkWave, pos: posC, vol: vClock * 0.4)
 					chunkCL = pannedC.0; chunkCR = pannedC.1
 				}
 
@@ -1672,14 +1676,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if vClick > 0 && self.clickPlayIdx < click.count {
 					let cSample = click[self.clickPlayIdx]
 					let posClick = self.getPanPos(mode: state.panClickIndex, time: tChunk)
-					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vClick * 0.8, intimate: state.enableIntimateMode)
+					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vClick * 0.8)
 					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
 					self.clickPlayIdx += 1
 				}
 				if vSoftClick > 0 && self.softClickPlayIdx < clickSoft.count {
 					let cSample = clickSoft[self.softClickPlayIdx]
 					let posClick = self.getPanPos(mode: state.panSoftClickIndex, time: tChunk)
-					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8 * softClickBoost, intimate: state.enableIntimateMode)
+					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8 * softClickBoost)
 					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
 					self.softClickPlayIdx += 1
 				}
@@ -1687,14 +1691,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				var chunkBL: Float = 0; var chunkBR: Float = 0
 				if vBrown > 0 {
 					let posB = self.getPanPos(mode: state.panBrownIndex, time: tChunk)
-					let pannedB = self.applyStereoPan(inL: brownL[idxNoise], inR: brownR[idxNoise], pos: posB, vol: vBrown * 0.5, intimate: state.enableIntimateMode)
+					let pannedB = self.applyStereoPan(inL: brownL[idxNoise], inR: brownR[idxNoise], pos: posB, vol: vBrown * 0.5)
 					chunkBL = pannedB.0; chunkBR = pannedB.1
 				}
 				
 				var chunkWL: Float = 0; var chunkWR: Float = 0
 				if vWhite > 0 {
 					let posW = self.getPanPos(mode: state.panWhiteIndex, time: tChunk)
-					let pannedW = self.applyStereoPan(inL: whiteL[idxNoise], inR: whiteR[idxNoise], pos: posW, vol: vWhite * 0.5, intimate: state.enableIntimateMode)
+					let pannedW = self.applyStereoPan(inL: whiteL[idxNoise], inR: whiteR[idxNoise], pos: posW, vol: vWhite * 0.5)
 					chunkWL = pannedW.0; chunkWR = pannedW.1
 				}
 
@@ -1759,7 +1763,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					}
 					let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
 					let realBreathVolMult: Float = state.useRealBreathing ? 10.0 : 2.5
-					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult, intimate: state.enableIntimateMode)
+					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult)
 					chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 				}
 
@@ -1820,22 +1824,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 	}
 
-	private func applyStereoPan(inL: Float, inR: Float, pos: Float, vol: Float, intimate: Bool) -> (Float, Float) {
+	private func applyStereoPan(inL: Float, inR: Float, pos: Float, vol: Float) -> (Float, Float) {
 		let bleedToL = pos < 0 ? abs(pos) : 0.0
 		let bleedToR = pos > 0 ? pos : 0.0
 		let keepL = pos > 0 ? 1.0 - pos : 1.0
 		let keepR = pos < 0 ? 1.0 - abs(pos) : 1.0
 		let norm = 1.0 + abs(pos)
-		
-		var outL = ((inL * keepL + inR * bleedToL) / norm) * vol
-		var outR = ((inR * keepR + inL * bleedToR) / norm) * vol
-		
-		if intimate {
-			// Emulate binaural head-shadowing: deeply reduce the opposite channel when panned
-			if pos > 0.1 { outL *= 0.25 }
-			if pos < -0.1 { outR *= 0.25 }
-		}
-		
+		let outL = ((inL * keepL + inR * bleedToL) / norm) * vol
+		let outR = ((inR * keepR + inL * bleedToR) / norm) * vol
 		return (outL, outR)
 	}
 
