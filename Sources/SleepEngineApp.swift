@@ -102,6 +102,7 @@ struct AudioRenderState {
 	var clockVolume: Float = 0
 	var softClickVolume: Float = 0
 	var brownVolume: Float = 0
+	var whiteVolume: Float = 0
 	var breathVolume: Float = 0
 	var clickVolume: Float = 0
 	var binauralVolume: Float = 0
@@ -109,6 +110,7 @@ struct AudioRenderState {
 	var panHeartIndex: Int = 0
 	var panClockIndex: Int = 0
 	var panBrownIndex: Int = 0
+	var panWhiteIndex: Int = 0
 	var panBreathIndex: Int = 0
 	var panClickIndex: Int = 0
 	var panSoftClickIndex: Int = 0
@@ -205,6 +207,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var clockVolume: Double = 0.0 { didSet { save("clockVolume", clockVolume); syncRenderState() } }
 	@Published var softClickVolume: Double = 0.0 { didSet { save("softClickVolume", softClickVolume); syncRenderState() } }
 	@Published var brownVolume: Double = 0.0 { didSet { save("brownVolume", brownVolume); syncRenderState() } }
+	@Published var whiteVolume: Double = 0.0 { didSet { save("whiteVolume", whiteVolume); syncRenderState() } }
 	@Published var breathVolume: Double = 0.0 { didSet { save("breathVolume", breathVolume); syncRenderState() } }
 	@Published var clickVolume: Double = 0.0 { didSet { save("clickVolume", clickVolume); syncRenderState() } }
 	@Published var binauralVolume: Double = 0.0 { didSet { save("binauralVolume", binauralVolume); syncRenderState() } }
@@ -215,6 +218,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var panHeartIndex: Int = 0 { didSet { save("panHeartIndex", panHeartIndex); syncRenderState() } }
 	@Published var panClockIndex: Int = 0 { didSet { save("panClockIndex", panClockIndex); syncRenderState() } }
 	@Published var panBrownIndex: Int = 0 { didSet { save("panBrownIndex", panBrownIndex); syncRenderState() } }
+	@Published var panWhiteIndex: Int = 0 { didSet { save("panWhiteIndex", panWhiteIndex); syncRenderState() } }
 	@Published var panBreathIndex: Int = 0 { didSet { save("panBreathIndex", panBreathIndex); syncRenderState() } }
 	@Published var panClickIndex: Int = 0 { didSet { save("panClickIndex", panClickIndex); syncRenderState() } }
 	@Published var panSoftClickIndex: Int = 0 { didSet { save("panSoftClickIndex", panSoftClickIndex); syncRenderState() } }
@@ -308,6 +312,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	private var brownL = [Float]()
 	private var brownR = [Float]()
+	private var whiteL = [Float]()
+	private var whiteR = [Float]()
 	private var breathL = [Float]()
 	private var breathR = [Float]()
 	private var whooshL = [Float]()
@@ -335,6 +341,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var smoothedVHeart: Float = 0.0
 	private var smoothedVClock: Float = 0.0
 	private var smoothedVBrown: Float = 0.0
+	private var smoothedVWhite: Float = 0.0
 	private var smoothedVBreath: Float = 0.0
 	private var smoothedVClick: Float = 0.0
 	private var smoothedVSoftClick: Float = 0.0
@@ -365,6 +372,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.clockVolume = ud.double(forKey: "clockVolume")
 		self.softClickVolume = ud.double(forKey: "softClickVolume")
 		self.brownVolume = ud.double(forKey: "brownVolume")
+		self.whiteVolume = ud.double(forKey: "whiteVolume")
 		self.breathVolume = ud.double(forKey: "breathVolume")
 		self.clickVolume = ud.double(forKey: "clickVolume")
 		self.binauralVolume = ud.double(forKey: "binauralVolume")
@@ -374,6 +382,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.panHeartIndex = ud.integer(forKey: "panHeartIndex")
 		self.panClockIndex = ud.integer(forKey: "panClockIndex")
 		self.panBrownIndex = ud.integer(forKey: "panBrownIndex")
+		self.panWhiteIndex = ud.integer(forKey: "panWhiteIndex")
 		self.panBreathIndex = ud.integer(forKey: "panBreathIndex")
 		self.panClickIndex = ud.integer(forKey: "panClickIndex")
 		self.panSoftClickIndex = ud.object(forKey: "panSoftClickIndex") == nil ? self.panClickIndex : ud.integer(forKey: "panSoftClickIndex")
@@ -461,6 +470,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		newState.clockVolume = Float(self.clockVolume)
 		newState.softClickVolume = Float(self.softClickVolume)
 		newState.brownVolume = Float(self.brownVolume)
+		newState.whiteVolume = Float(self.whiteVolume)
 		newState.breathVolume = Float(self.breathVolume)
 		newState.clickVolume = Float(self.clickVolume)
 		newState.binauralVolume = Float(self.binauralVolume)
@@ -468,6 +478,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		newState.panHeartIndex = self.panHeartIndex
 		newState.panClockIndex = self.panClockIndex
 		newState.panBrownIndex = self.panBrownIndex
+		newState.panWhiteIndex = self.panWhiteIndex
 		newState.panBreathIndex = self.panBreathIndex
 		newState.panClickIndex = self.panClickIndex
 		newState.panSoftClickIndex = self.panSoftClickIndex
@@ -709,6 +720,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		smoothedVHeart = 0.0
 		smoothedVClock = 0.0
 		smoothedVBrown = 0.0
+		smoothedVWhite = 0.0
 		smoothedVBreath = 0.0
 		smoothedVClick = 0.0
 		smoothedVSoftClick = 0.0
@@ -1439,6 +1451,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 			let lubL = self.lubL; let dubL = self.dubL; let lubR = self.lubR; let dubR = self.dubR
 			let lubEnv = self.lubEnv; let dubEnv = self.dubEnv; let brownL = self.brownL; let brownR = self.brownR
+			let whiteL = self.whiteL; let whiteR = self.whiteR
 			let breathL = self.breathL; let breathR = self.breathR; let whooshL = self.whooshL; let whooshR = self.whooshR
 			let clk = self.clk; let click = self.clickBuffer; let clickSoft = self.clickSoftBuffer; let realInhale = self.realInhaleBuffer; let realExhale = self.realExhaleBuffer
 			let nBeat = self.nBeat; let nNoise = self.nNoise
@@ -1449,6 +1462,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 			let targetVHeart = state.heartbeatVolume; let targetVClock = state.clockVolume
 			let targetVBrown = state.brownVolume; let targetVBreath = state.breathVolume
+			let targetVWhite = state.whiteVolume
 			let targetVClick = state.clickVolume; let targetVSoftClick = state.softClickVolume
 			let targetVBinaural = state.binauralVolume
 
@@ -1462,15 +1476,17 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				self.smoothedVHeart += (targetVHeart - self.smoothedVHeart) * smoothFactor
 				self.smoothedVClock += (targetVClock - self.smoothedVClock) * smoothFactor
 				self.smoothedVBrown += (targetVBrown - self.smoothedVBrown) * smoothFactor
+				self.smoothedVWhite += (targetVWhite - self.smoothedVWhite) * smoothFactor
 				self.smoothedVBreath += (targetVBreath - self.smoothedVBreath) * smoothFactor
 				self.smoothedVClick += (targetVClick - self.smoothedVClick) * smoothFactor
 				self.smoothedVSoftClick += (targetVSoftClick - self.smoothedVSoftClick) * smoothFactor
 				self.smoothedVBinaural += (targetVBinaural - self.smoothedVBinaural) * smoothFactor
 
 				let vHeart = self.smoothedVHeart; let vClock = self.smoothedVClock; let vBrown = self.smoothedVBrown
+				let vWhite = self.smoothedVWhite
 				let vBreath = self.smoothedVBreath; let vClick = self.smoothedVClick; let vSoftClick = self.smoothedVSoftClick; let vBinaural = self.smoothedVBinaural
 				let softClickBoost: Float = state.softClickBoostEnabled ? 2.5 : 1.0
-				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vSoftClick * 0.3 * softClickBoost) + (vBinaural * 0.4)
+				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vWhite * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vSoftClick * 0.3 * softClickBoost) + (vBinaural * 0.4)
 
 				let currentFrame = self.frameIdx + frame
 				let timeInSeconds = Double(currentFrame) / self.sampleRate
@@ -1655,6 +1671,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					let pannedB = self.applyStereoPan(inL: brownL[idxNoise], inR: brownR[idxNoise], pos: posB, vol: vBrown * 0.5)
 					chunkBL = pannedB.0; chunkBR = pannedB.1
 				}
+				
+				var chunkWL: Float = 0; var chunkWR: Float = 0
+				if vWhite > 0 {
+					let posW = self.getPanPos(mode: state.panWhiteIndex, time: tChunk)
+					let pannedW = self.applyStereoPan(inL: whiteL[idxNoise], inR: whiteR[idxNoise], pos: posW, vol: vWhite * 0.5)
+					chunkWL = pannedW.0; chunkWR = pannedW.1
+				}
 
 				var chunkBinL: Float = 0; var chunkBinR: Float = 0
 				if vBinaural > 0 {
@@ -1721,8 +1744,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 				}
 
-				let finalL = ((chunkHL + chunkCL + chunkBL + chunkBrL + chunkClickL + chunkBinL) / totalGain) * state.soundscapeMultiplier
-				let finalR = ((chunkHR + chunkCR + chunkBR + chunkBrR + chunkClickR + chunkBinR) / totalGain) * state.soundscapeMultiplier
+				let finalL = ((chunkHL + chunkCL + chunkBL + chunkWL + chunkBrL + chunkClickL + chunkBinL) / totalGain) * state.soundscapeMultiplier
+				let finalR = ((chunkHR + chunkCR + chunkBR + chunkWR + chunkBrR + chunkClickR + chunkBinR) / totalGain) * state.soundscapeMultiplier
 				ptrL?[frame] = finalL; ptrR?[frame] = finalR
 			}
 			self.frameIdx += Int(frameCount)
@@ -1789,6 +1812,26 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		repeat { u1 = Float.random(in: 0..<1) } while u1 == 0
 		let u2 = Float.random(in: 0..<1)
 		return sqrt(-2.0 * log(u1)) * cos(2.0 * Float.pi * u2)
+	}
+	
+	private func generateWhiteNoise(length: Int) -> [Float] {
+		let crossfadeLength = Int(sampleRate * 2.0)
+		let totalLength = length + crossfadeLength
+		var noise = [Float](repeating: 0, count: totalLength)
+		var maxVal: Float = 0
+		for i in 0..<totalLength {
+			noise[i] = gaussianRandom()
+		}
+		for i in 0..<crossfadeLength {
+			let ratio = Float(i) / Float(crossfadeLength)
+			let fadeOut = cos(ratio * Float.pi / 2.0)
+			let fadeIn = sin(ratio * Float.pi / 2.0)
+			noise[i] = (noise[length + i] * fadeOut) + (noise[i] * fadeIn)
+		}
+		var finalNoise = Array(noise[0..<length])
+		for i in 0..<length { if abs(finalNoise[i]) > maxVal { maxVal = abs(finalNoise[i]) } }
+		if maxVal > 0 { for i in 0..<length { finalNoise[i] /= maxVal } }
+		return finalNoise
 	}
 
 	private func generateSeamlessNoise(length: Int, lpfFreq: Double? = nil, isBrown: Bool = false) -> [Float] {
@@ -1896,6 +1939,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			brownL = generateSeamlessNoise(length: nNoise, isBrown: true); brownR = generateSeamlessNoise(length: nNoise, isBrown: true)
 			breathL = generateSeamlessNoise(length: nNoise, lpfFreq: 600); breathR = generateSeamlessNoise(length: nNoise, lpfFreq: 600)
 		}
+		whiteL = generateWhiteNoise(length: nNoise); whiteR = generateWhiteNoise(length: nNoise)
 		whooshL = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf); whooshR = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf)
 
 		let clkType = clockOptions[clockTypeIndex]; let nClockProto = Int(sampleRate * 1.5)
@@ -2357,6 +2401,11 @@ struct GeneratorView: View {
 
 					Toggle("Sync to Heartbeat", isOn: $engine.syncClick)
 				}.padding(.vertical, 4)
+				
+				VStack(alignment: .leading) {
+					Text("Absolute Room Masking (White Noise)").bold()
+					Slider(value: $engine.whiteVolume, in: 0...1).accessibilityLabel("White Noise Volume")
+				}.padding(.vertical, 4)
 
 				VStack(alignment: .leading) {
 					Text("Brown Noise").accessibilityHidden(true)
@@ -2420,6 +2469,13 @@ struct GeneratorView: View {
 				.pickerStyle(MenuPickerStyle())
 
 				Picker("Soft Click Position", selection: $engine.panSoftClickIndex) {
+					ForEach(0..<engine.panOptions.count, id: \.self) { index in
+						Text(engine.panOptions[index]).tag(index)
+					}
+				}
+				.pickerStyle(MenuPickerStyle())
+				
+				Picker("White Noise Position", selection: $engine.panWhiteIndex) {
 					ForEach(0..<engine.panOptions.count, id: \.self) { index in
 						Text(engine.panOptions[index]).tag(index)
 					}
