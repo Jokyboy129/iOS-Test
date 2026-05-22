@@ -355,7 +355,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	private var breathFrameCounter: Int = 0
 	private var lastManualState: Int = 0
-	private var lastPhaseBeat: Int = -1
 	private var syncedRealBreathSampleIndex: Int = 0
 	private var syncedRealBreathSegment: Int = 0
 
@@ -673,7 +672,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	func updateProximityEQ() {
 		proximityEqNode.bypass = !enableIntimateMode
-		proximityEqNode.globalGain = enableIntimateMode ? 4.0 : 0.0
 	}
 
 	func updateHSPMode() {
@@ -752,7 +750,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		binauralPhaseR = 0.0
 		breathFrameCounter = 0
 		lastManualState = 0
-		lastPhaseBeat = -1
 		syncedRealBreathSampleIndex = 0
 		syncedRealBreathSegment = 0
 	}
@@ -1558,20 +1555,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					}
 
 					DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
-					if state.syncBreathing && !state.isBreathing {
-						let phaseBeat = self.beatCounter % 8
-						if phaseBeat != self.lastPhaseBeat {
-							self.lastPhaseBeat = phaseBeat
-							if phaseBeat == 0 {
-								DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "INHALE") } }
-							} else if phaseBeat == 4 {
-								DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "EXHALE") } }
-							} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
-								let anchor = self.anchors.randomElement()!
-								DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
-							}
-						}
-					}
 				}
 
 				let clockType = self.clockOptions[state.clockTypeIndex]
@@ -1658,7 +1641,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let wVol = Float(config.whooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
-				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart)
+				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart, intimate: state.enableIntimateMode)
 
 				var chunkCL: Float = 0; var chunkCR: Float = 0
 				if vClock > 0 {
@@ -1668,7 +1651,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						if self.clkPlayIdx2 < clk.count { clkWave += clk[self.clkPlayIdx2]; self.clkPlayIdx2 += 1 }
 					} else { clkWave = clk[currentFrame % clk.count] }
 					let posC = self.getPanPos(mode: state.panClockIndex, time: tChunk)
-					let pannedC = self.applyStereoPan(inL: clkWave, inR: clkWave, pos: posC, vol: vClock * 0.4)
+					let pannedC = self.applyStereoPan(inL: clkWave, inR: clkWave, pos: posC, vol: vClock * 0.4, intimate: state.enableIntimateMode)
 					chunkCL = pannedC.0; chunkCR = pannedC.1
 				}
 
@@ -1676,14 +1659,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if vClick > 0 && self.clickPlayIdx < click.count {
 					let cSample = click[self.clickPlayIdx]
 					let posClick = self.getPanPos(mode: state.panClickIndex, time: tChunk)
-					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vClick * 0.8)
+					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vClick * 0.8, intimate: state.enableIntimateMode)
 					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
 					self.clickPlayIdx += 1
 				}
 				if vSoftClick > 0 && self.softClickPlayIdx < clickSoft.count {
 					let cSample = clickSoft[self.softClickPlayIdx]
 					let posClick = self.getPanPos(mode: state.panSoftClickIndex, time: tChunk)
-					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8 * softClickBoost)
+					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8 * softClickBoost, intimate: state.enableIntimateMode)
 					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
 					self.softClickPlayIdx += 1
 				}
@@ -1691,14 +1674,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				var chunkBL: Float = 0; var chunkBR: Float = 0
 				if vBrown > 0 {
 					let posB = self.getPanPos(mode: state.panBrownIndex, time: tChunk)
-					let pannedB = self.applyStereoPan(inL: brownL[idxNoise], inR: brownR[idxNoise], pos: posB, vol: vBrown * 0.5)
+					let pannedB = self.applyStereoPan(inL: brownL[idxNoise], inR: brownR[idxNoise], pos: posB, vol: vBrown * 0.5, intimate: state.enableIntimateMode)
 					chunkBL = pannedB.0; chunkBR = pannedB.1
 				}
 				
 				var chunkWL: Float = 0; var chunkWR: Float = 0
 				if vWhite > 0 {
 					let posW = self.getPanPos(mode: state.panWhiteIndex, time: tChunk)
-					let pannedW = self.applyStereoPan(inL: whiteL[idxNoise], inR: whiteR[idxNoise], pos: posW, vol: vWhite * 0.5)
+					let pannedW = self.applyStereoPan(inL: whiteL[idxNoise], inR: whiteR[idxNoise], pos: posW, vol: vWhite * 0.5, intimate: state.enableIntimateMode)
 					chunkWL = pannedW.0; chunkWR = pannedW.1
 				}
 
@@ -1718,24 +1701,44 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if vBreath > 0 && !state.isBreathing {
 					var breathEnv: Float = 0; var sampleIdxForRealBreath = 0; var usingInhale = false; var usingExhale = false
 					if state.syncBreathing {
-						let syncPhase: Double
-						if state.enableSlowdown || state.enableRSA { syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration) }
-						else { let beatRatio = Double(currentFrame % nBeat) / Double(nBeat); syncPhase = Double(self.beatCounter % 8) + beatRatio }
-						if syncPhase < 4.0 {
-							usingInhale = true; let inhalePhase = Float(sin(Double.pi * syncPhase / 4.0)); breathEnv = inhalePhase * 0.8
-							sampleIdxForRealBreath = Int((syncPhase / 4.0) * (4.0 * beatDuration * self.sampleRate))
-						} else if syncPhase >= 4.0 && syncPhase < 8.0 {
-							usingExhale = true; let exhalePhase = Float(sin(Double.pi * (syncPhase - 4.0) / 4.0)); breathEnv = exhalePhase * 0.6
-							sampleIdxForRealBreath = Int(((syncPhase - 4.0) / 4.0) * (4.0 * beatDuration * self.sampleRate))
+						let syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration)
+						let phaseBeat = self.beatCounter % 8
+						
+						if phaseBeat < 4 {
+							usingInhale = true
+							let inhalePhase = Float(sin(Double.pi * syncPhase / 4.0))
+							breathEnv = max(0.0, inhalePhase) * 0.8
+						} else {
+							usingExhale = true
+							let exhalePhase = Float(sin(Double.pi * (syncPhase - 4.0) / 4.0))
+							breathEnv = max(0.0, exhalePhase) * 0.6
 						}
+						
+						if isBeat {
+							if phaseBeat == 0 {
+								DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "INHALE") } }
+							} else if phaseBeat == 4 {
+								DispatchQueue.main.async { self.currentBreathingPhase = "Exhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "EXHALE") } }
+							} else if phaseBeat == 2 && self.enableEnhancedAnchors && Bool.random() {
+								let anchor = self.anchors.randomElement()!
+								DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
+							}
+						}
+						
 						if state.useRealBreathing {
-							let currentSegment = usingInhale ? 1 : (usingExhale ? 2 : 0)
+							let currentSegment = usingInhale ? 1 : 2
 							if currentSegment != self.syncedRealBreathSegment {
 								self.syncedRealBreathSegment = currentSegment
 								self.syncedRealBreathSampleIndex = 0
 							}
 							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
-							if currentSegment != 0 { self.syncedRealBreathSampleIndex += 1 }
+							self.syncedRealBreathSampleIndex += 1
+						} else {
+							if phaseBeat < 4 {
+								sampleIdxForRealBreath = Int((syncPhase / 4.0) * (4.0 * beatDuration * self.sampleRate))
+							} else {
+								sampleIdxForRealBreath = Int(((syncPhase - 4.0) / 4.0) * (4.0 * beatDuration * self.sampleRate))
+							}
 						}
 					} else {
 						self.syncedRealBreathSegment = 0
@@ -1749,6 +1752,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							sampleIdxForRealBreath = Int(((breathPhase - 0.5) / 0.45) * (0.45 * breathDuration * self.sampleRate))
 						}
 					}
+					
 					var breathSampleL: Float = 0; var breathSampleR: Float = 0
 					if state.useRealBreathing {
 						if usingInhale && !realInhale.isEmpty {
@@ -1763,7 +1767,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					}
 					let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
 					let realBreathVolMult: Float = state.useRealBreathing ? 10.0 : 2.5
-					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult)
+					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult, intimate: state.enableIntimateMode)
 					chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 				}
 
@@ -1794,7 +1798,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.connect(reverbNode, to: postReverbMixer, format: format)
 			engine.connect(meditationPlayerNode, to: postReverbMixer, format: format)
 			
-			// Process via proximity EQ -> HSP mode -> Output
 			engine.connect(postReverbMixer, to: proximityEqNode, format: format)
 			engine.connect(proximityEqNode, to: hspEqNode, format: format)
 			engine.connect(hspEqNode, to: engine.mainMixerNode, format: format)
@@ -1824,14 +1827,21 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 	}
 
-	private func applyStereoPan(inL: Float, inR: Float, pos: Float, vol: Float) -> (Float, Float) {
+	private func applyStereoPan(inL: Float, inR: Float, pos: Float, vol: Float, intimate: Bool) -> (Float, Float) {
 		let bleedToL = pos < 0 ? abs(pos) : 0.0
 		let bleedToR = pos > 0 ? pos : 0.0
 		let keepL = pos > 0 ? 1.0 - pos : 1.0
 		let keepR = pos < 0 ? 1.0 - abs(pos) : 1.0
 		let norm = 1.0 + abs(pos)
-		let outL = ((inL * keepL + inR * bleedToL) / norm) * vol
-		let outR = ((inR * keepR + inL * bleedToR) / norm) * vol
+		
+		var outL = ((inL * keepL + inR * bleedToL) / norm) * vol
+		var outR = ((inR * keepR + inL * bleedToR) / norm) * vol
+		
+		if intimate {
+			if pos > 0 { outL *= Float(1.0 - (pos * 0.7)) }
+			if pos < 0 { outR *= Float(1.0 - (abs(pos) * 0.7)) }
+		}
+		
 		return (outL, outR)
 	}
 
