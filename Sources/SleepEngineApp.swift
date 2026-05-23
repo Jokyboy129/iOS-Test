@@ -1497,7 +1497,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			let clk = self.clk; let click = self.clickBuffer; let clickSoft = self.clickSoftBuffer; let realInhale = self.realInhaleBuffer; let realExhale = self.realExhaleBuffer
 			let nBeat = self.nBeat; let nNoise = self.nNoise
 			let config = self.profiles[state.selectedProfileIndex]
-			let placement = self.placementOptions[state.placementIndex]
 
 			if nNoise == 0 || nBeat == 0 { return noErr }
 
@@ -1578,8 +1577,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: true) }
 				}
 
-				let clockType = self.clockOptions[state.clockTypeIndex]
-				let ticksPerBeat = clockType == String(localized: "Pocket Watch") ? 2 : 1
+				let ticksPerBeat = state.clockTypeIndex == 1 ? 2 : 1
 
 				if isHalfBeat {
 					if ticksPerBeat == 2 { self.clkPlayIdx2 = 0 }
@@ -1628,9 +1626,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				let combinedLub = Float((lub + subLub) * 0.8); let combinedDub = Float((dub + subDub) * 0.8)
-				if placement == String(localized: "Center Beats & Flow") {
+				
+				if state.placementIndex == 0 {
 					hL = (combinedLub + combinedDub) * 0.85; hR = (combinedLub + combinedDub) * 0.85
-				} else if placement == String(localized: "Lub Left Ear / Dub Right Ear") {
+				} else if state.placementIndex == 1 {
 					hL = combinedLub; hR = combinedDub
 				} else {
 					hL = combinedDub; hR = combinedLub
@@ -1831,20 +1830,17 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	}
 
 	private func getPanPos(mode: Int, time: Float) -> Float {
-		let option = panOptions[mode]
-		switch option {
-		case String(localized: "Center"): return 0.0
-		case String(localized: "Left"): return -1.0
-		case String(localized: "Right"): return 1.0
-		case String(localized: "Soft Left"): return -0.5
-		case String(localized: "Soft Right"): return 0.5
-		default:
-			var period: Float = 60.0
-			if option.contains("1 Minute") { period = 60.0 }
-			else if option.contains("5 Minute") { period = 300.0 }
-			else if option.contains("30 Minute") { period = 1800.0 }
-			else if option.contains("1 Hour") { period = 3600.0 }
-			return sin(2.0 * Float.pi * time / period)
+		switch mode {
+		case 0: return 0.0
+		case 1: return -1.0
+		case 2: return 1.0
+		case 3: return -0.5
+		case 4: return 0.5
+		case 5: return sin(2.0 * Float.pi * time / 60.0)
+		case 6: return sin(2.0 * Float.pi * time / 300.0)
+		case 7: return sin(2.0 * Float.pi * time / 1800.0)
+		case 8: return sin(2.0 * Float.pi * time / 3600.0)
+		default: return 0.0
 		}
 	}
 
@@ -1933,7 +1929,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let atkSamples = Int(0.04 * sampleRate); let relSamples = Int(0.02 * sampleRate)
 		let trueSubFreq = max(1, round(config.subFreq * actualBeatDur)) / actualBeatDur
 		let idxStart = Int(config.dubDelay * sampleRate)
-		let placement = placementOptions[placementIndex]
+		let placementIndex = self.placementIndex
 
 		var localLubL = [Float](repeating: 0, count: nBeat); var localLubR = [Float](repeating: 0, count: nBeat)
 		var localDubL = [Float](repeating: 0, count: nBeat); var localDubR = [Float](repeating: 0, count: nBeat)
@@ -1968,10 +1964,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			localDubEnv[i] = Float(dEnv)
 
 			let combinedLub = Float((lub + subLub)); let combinedDub = Float((dub + subDub))
-			if placement == String(localized: "Center Beats & Flow") {
+			if placementIndex == 0 {
 				localLubL[i] = combinedLub * 0.85; localLubR[i] = combinedLub * 0.85
 				localDubL[i] = combinedDub * 0.85; localDubR[i] = combinedDub * 0.85
-			} else if placement == String(localized: "Lub Left Ear / Dub Right Ear") {
+			} else if placementIndex == 1 {
 				localLubL[i] = combinedLub; localLubR[i] = 0; localDubL[i] = 0; localDubR[i] = combinedDub
 			} else {
 				localLubL[i] = 0; localLubR[i] = combinedLub; localDubL[i] = combinedDub; localDubR[i] = 0
@@ -2001,17 +1997,17 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		whiteL = generateWhiteNoise(length: nNoise); whiteR = generateWhiteNoise(length: nNoise)
 		whooshL = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf); whooshR = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf)
 
-		let clkType = clockOptions[clockTypeIndex]; let nClockProto = Int(sampleRate * 1.5)
+		let clockTypeIndex = self.clockTypeIndex; let nClockProto = Int(sampleRate * 1.5)
 		clk = [Float](repeating: 0, count: nClockProto)
 		for i in 0..<nClockProto {
 			let tc = Double(i) / sampleRate; let randomGaussian = gaussianRandom() * 0.3
-			if clkType == String(localized: "Quartz Wall Clock") {
+			if clockTypeIndex == 0 {
 				let body = (sin(2 * Double.pi * 1200 * tc) * 0.15 + sin(2 * Double.pi * 2000 * tc) * 0.05) * exp(-120 * tc)
 				clk[i] = Float(body) + randomGaussian * Float(exp(-300 * tc))
-			} else if clkType == String(localized: "Pocket Watch") {
+			} else if clockTypeIndex == 1 {
 				let body = (sin(2 * Double.pi * 4000 * tc) * 0.1 + sin(2 * Double.pi * 6000 * tc) * 0.05) * exp(-200 * tc)
 				clk[i] = Float(body) + randomGaussian * Float(exp(-800 * tc)) * 1.5
-			} else if clkType == String(localized: "Grandfather Clock") {
+			} else if clockTypeIndex == 2 {
 				let body = (sin(2 * Double.pi * 350 * tc) * 0.2 + sin(2 * Double.pi * 800 * tc) * 0.1) * exp(-60 * tc)
 				clk[i] = Float(body) + randomGaussian * Float(exp(-500 * tc)) * 1.2
 			} else {
