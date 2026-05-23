@@ -178,26 +178,47 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	var alarmFadeMultiplier: Double = 0.0 { didSet { updateVolumes() } }
 
 	let profiles: [HeartbeatProfile] = [
-		HeartbeatProfile(name: "ASMR Blood Flow (60 BPM)", bpm: 60, lubBase: 40, lubDrop: 15, lubDecay: 18, dubBase: 50, dubDrop: 20, dubDecay: 22, dubDelay: 0.30, subFreq: 35, subVol: 0.25, subDecay: 6, whooshVol: 0.50, noiseLpf: 450),
-		HeartbeatProfile(name: "Standard Resting Heart (72 BPM)", bpm: 72, lubBase: 45, lubDrop: 10, lubDecay: 20, dubBase: 55, dubDrop: 15, dubDecay: 25, dubDelay: 0.28, subFreq: 30, subVol: 0.30, subDecay: 5, whooshVol: 0.30, noiseLpf: 500),
-		HeartbeatProfile(name: "Womb Simulation (55 BPM)", bpm: 55, lubBase: 55, lubDrop: 20, lubDecay: 20, dubBase: 70, dubDrop: 25, dubDecay: 25, dubDelay: 0.35, subFreq: 35, subVol: 0.45, subDecay: 5, whooshVol: 0.60, noiseLpf: 650),
-		HeartbeatProfile(name: "Zen Meditation (50 BPM)", bpm: 50, lubBase: 35, lubDrop: 25, lubDecay: 15, dubBase: 45, dubDrop: 30, dubDecay: 18, dubDelay: 0.32, subFreq: 30, subVol: 0.40, subDecay: 4, whooshVol: 0.12, noiseLpf: 150),
-		HeartbeatProfile(name: "Athletic Recovery (45 BPM)", bpm: 45, lubBase: 40, lubDrop: 15, lubDecay: 16, dubBase: 50, dubDrop: 20, dubDecay: 20, dubDelay: 0.34, subFreq: 30, subVol: 0.50, subDecay: 5, whooshVol: 0.25, noiseLpf: 300),
-		HeartbeatProfile(name: "Gentle Drift (42 BPM)", bpm: 42, lubBase: 32, lubDrop: 18, lubDecay: 14, dubBase: 38, dubDrop: 22, dubDecay: 16, dubDelay: 0.36, subFreq: 26, subVol: 0.55, subDecay: 4, whooshVol: 0.22, noiseLpf: 220),
-		HeartbeatProfile(name: "Deep Sleep Resonance (40 BPM)", bpm: 40, lubBase: 30, lubDrop: 20, lubDecay: 12, dubBase: 35, dubDrop: 25, dubDecay: 15, dubDelay: 0.38, subFreq: 25, subVol: 0.60, subDecay: 4, whooshVol: 0.20, noiseLpf: 200),
-		HeartbeatProfile(name: "Hibernation State (35 BPM)", bpm: 35, lubBase: 28, lubDrop: 20, lubDecay: 10, dubBase: 32, dubDrop: 25, dubDecay: 12, dubDelay: 0.40, subFreq: 22, subVol: 0.70, subDecay: 3, whooshVol: 0.15, noiseLpf: 180),
-		HeartbeatProfile(name: "Deep Trance (30 BPM)", bpm: 30, lubBase: 25, lubDrop: 25, lubDecay: 10, dubBase: 30, dubDrop: 30, dubDecay: 12, dubDelay: 0.45, subFreq: 20, subVol: 0.75, subDecay: 3, whooshVol: 0.15, noiseLpf: 150),
-		HeartbeatProfile(name: "Slow Wave Sleep (25 BPM)", bpm: 25, lubBase: 22, lubDrop: 25, lubDecay: 8, dubBase: 26, dubDrop: 30, dubDecay: 10, dubDelay: 0.50, subFreq: 18, subVol: 0.85, subDecay: 2, whooshVol: 0.10, noiseLpf: 130),
-		HeartbeatProfile(name: "Cinematic Oceanic (18 BPM)", bpm: 18, lubBase: 25, lubDrop: 30, lubDecay: 8, dubBase: 30, dubDrop: 35, dubDecay: 10, dubDelay: 0.60, subFreq: 20, subVol: 0.90, subDecay: 2, whooshVol: 0.15, noiseLpf: 120),
-		HeartbeatProfile(name: "Soft Pillowy Pulse (62 BPM)", bpm: 62, lubBase: 40, lubDrop: 15, lubDecay: 25, dubBase: 50, dubDrop: 20, dubDecay: 30, dubDelay: 0.28, subFreq: 32, subVol: 0.35, subDecay: 6, whooshVol: 0.20, noiseLpf: 250)
+		HeartbeatProfile(name: String(localized: "ASMR Blood Flow (60 BPM)"), bpm: 60, lubBase: 40, lubDrop: 15, lubDecay: 18, dubBase: 50, dubDrop: 20, dubDecay: 22, dubDelay: 0.30, subFreq: 35, subVol: 0.25, subDecay: 6, whooshVol: 0.50, noiseLpf: 450),
+		HeartbeatProfile(name: String(localized: "Standard Resting Heart (72 BPM)"), bpm: 72, lubBase: 45, lubDrop: 10, lubDecay: 20, dubBase: 55, dubDrop: 15, dubDecay: 25, dubDelay: 0.28, subFreq: 30, subVol: 0.30, subDecay: 5, whooshVol: 0.30, noiseLpf: 500),
+		HeartbeatProfile(name: String(localized: "Womb Simulation (55 BPM)"), bpm: 55, lubBase: 55, lubDrop: 20, lubDecay: 20, dubBase: 70, dubDrop: 25, dubDecay: 25, dubDelay: 0.35, subFreq: 35, subVol: 0.45, subDecay: 5, whooshVol: 0.60, noiseLpf: 650),
+		HeartbeatProfile(name: String(localized: "Zen Meditation (50 BPM)"), bpm: 50, lubBase: 35, lubDrop: 25, lubDecay: 15, dubBase: 45, dubDrop: 30, dubDecay: 18, dubDelay: 0.32, subFreq: 30, subVol: 0.40, subDecay: 4, whooshVol: 0.12, noiseLpf: 150),
+		HeartbeatProfile(name: String(localized: "Athletic Recovery (45 BPM)"), bpm: 45, lubBase: 40, lubDrop: 15, lubDecay: 16, dubBase: 50, dubDrop: 20, dubDecay: 20, dubDelay: 0.34, subFreq: 30, subVol: 0.50, subDecay: 5, whooshVol: 0.25, noiseLpf: 300),
+		HeartbeatProfile(name: String(localized: "Gentle Drift (42 BPM)"), bpm: 42, lubBase: 32, lubDrop: 18, lubDecay: 14, dubBase: 38, dubDrop: 22, dubDecay: 16, dubDelay: 0.36, subFreq: 26, subVol: 0.55, subDecay: 4, whooshVol: 0.22, noiseLpf: 220),
+		HeartbeatProfile(name: String(localized: "Deep Sleep Resonance (40 BPM)"), bpm: 40, lubBase: 30, lubDrop: 20, lubDecay: 12, dubBase: 35, dubDrop: 25, dubDecay: 15, dubDelay: 0.38, subFreq: 25, subVol: 0.60, subDecay: 4, whooshVol: 0.20, noiseLpf: 200),
+		HeartbeatProfile(name: String(localized: "Hibernation State (35 BPM)"), bpm: 35, lubBase: 28, lubDrop: 20, lubDecay: 10, dubBase: 32, dubDrop: 25, dubDecay: 12, dubDelay: 0.40, subFreq: 22, subVol: 0.70, subDecay: 3, whooshVol: 0.15, noiseLpf: 180),
+		HeartbeatProfile(name: String(localized: "Deep Trance (30 BPM)"), bpm: 30, lubBase: 25, lubDrop: 25, lubDecay: 10, dubBase: 30, dubDrop: 30, dubDecay: 12, dubDelay: 0.45, subFreq: 20, subVol: 0.75, subDecay: 3, whooshVol: 0.15, noiseLpf: 150),
+		HeartbeatProfile(name: String(localized: "Slow Wave Sleep (25 BPM)"), bpm: 25, lubBase: 22, lubDrop: 25, lubDecay: 8, dubBase: 26, dubDrop: 30, dubDecay: 10, dubDelay: 0.50, subFreq: 18, subVol: 0.85, subDecay: 2, whooshVol: 0.10, noiseLpf: 130),
+		HeartbeatProfile(name: String(localized: "Cinematic Oceanic (18 BPM)"), bpm: 18, lubBase: 25, lubDrop: 30, lubDecay: 8, dubBase: 30, dubDrop: 35, dubDecay: 10, dubDelay: 0.60, subFreq: 20, subVol: 0.90, subDecay: 2, whooshVol: 0.15, noiseLpf: 120),
+		HeartbeatProfile(name: String(localized: "Soft Pillowy Pulse (62 BPM)"), bpm: 62, lubBase: 40, lubDrop: 15, lubDecay: 25, dubBase: 50, dubDrop: 20, dubDecay: 30, dubDelay: 0.28, subFreq: 32, subVol: 0.35, subDecay: 6, whooshVol: 0.20, noiseLpf: 250)
 	]
 
-	let panOptions = ["Center", "Left", "Right", "Soft Left", "Soft Right", "1 Minute Slow Shift", "5 Minute Slow Shift", "30 Minute Extra Slow Shift", "1 Hour Extra Slow Shift"]
-	let clockOptions = ["Quartz Wall Clock", "Pocket Watch", "Grandfather Clock", "Metronome"]
-	let placementOptions = ["Center Beats & Flow", "Lub Left Ear / Dub Right Ear", "Lub Right Ear / Dub Left Ear"]
+	let panOptions = [
+		String(localized: "Center"), String(localized: "Left"), String(localized: "Right"),
+		String(localized: "Soft Left"), String(localized: "Soft Right"),
+		String(localized: "1 Minute Slow Shift"), String(localized: "5 Minute Slow Shift"),
+		String(localized: "30 Minute Extra Slow Shift"), String(localized: "1 Hour Extra Slow Shift")
+	]
+	let clockOptions = [
+		String(localized: "Quartz Wall Clock"), String(localized: "Pocket Watch"),
+		String(localized: "Grandfather Clock"), String(localized: "Metronome")
+	]
+	let placementOptions = [
+		String(localized: "Center Beats & Flow"),
+		String(localized: "Lub Left Ear / Dub Right Ear"),
+		String(localized: "Lub Right Ear / Dub Left Ear")
+	]
 	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
-	let reverbOptions = ["Dry / No Reverb", "Small Room", "Medium Hall", "Large Hall", "Cathedral", "Medium Room", "Large Room", "Large Room 2"]
-	let binauralOptions = ["Delta Waves (2Hz - Deep Sleep)", "Theta Waves (6Hz - Dreaming)", "Alpha Waves (10Hz - Relaxation)"]
+	let reverbOptions = [
+		String(localized: "Dry / No Reverb"), String(localized: "Small Room"),
+		String(localized: "Medium Hall"), String(localized: "Large Hall"),
+		String(localized: "Cathedral"), String(localized: "Medium Room"),
+		String(localized: "Large Room"), String(localized: "Large Room 2")
+	]
+	let binauralOptions = [
+		String(localized: "Delta Waves (2Hz - Deep Sleep)"),
+		String(localized: "Theta Waves (6Hz - Dreaming)"),
+		String(localized: "Alpha Waves (10Hz - Relaxation)")
+	]
 
 	private var renderState = AudioRenderState()
 
@@ -360,7 +381,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	private var breathingTask: Task<Void, Never>?
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
-	@Published var currentBreathingPhase: String = "Ready"
+	@Published var currentBreathingPhase: String = String(localized: "Ready")
 
 	override init() {
 		super.init()
@@ -442,12 +463,12 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		proximityEqNode.bands[0].frequency = 250.0
 		proximityEqNode.bands[0].gain = 8.0
 		proximityEqNode.bands[0].bypass = false
-		
+
 		proximityEqNode.bands[1].filterType = .highShelf
 		proximityEqNode.bands[1].frequency = 6000.0
 		proximityEqNode.bands[1].gain = 5.0
 		proximityEqNode.bands[1].bypass = false
-		
+
 		proximityEqNode.bypass = !self.enableIntimateMode
 
 		syncRenderState()
@@ -1445,7 +1466,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		breathingTask?.cancel()
 		isBreathing = false
 		manualBreathState = 0
-		currentBreathingPhase = "Ready"
+		currentBreathingPhase = String(localized: "Ready")
 		breathingNode.stop()
 		anchorNode.stop()
 		if backgroundTaskID != .invalid {
@@ -1558,7 +1579,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				let clockType = self.clockOptions[state.clockTypeIndex]
-				let ticksPerBeat = clockType == "Pocket Watch" ? 2 : 1
+				let ticksPerBeat = clockType == String(localized: "Pocket Watch") ? 2 : 1
 
 				if isHalfBeat {
 					if ticksPerBeat == 2 { self.clkPlayIdx2 = 0 }
@@ -1607,9 +1628,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				let combinedLub = Float((lub + subLub) * 0.8); let combinedDub = Float((dub + subDub) * 0.8)
-				if placement == "Center Beats & Flow" {
+				if placement == String(localized: "Center Beats & Flow") {
 					hL = (combinedLub + combinedDub) * 0.85; hR = (combinedLub + combinedDub) * 0.85
-				} else if placement == "Lub Left Ear / Dub Right Ear" {
+				} else if placement == String(localized: "Lub Left Ear / Dub Right Ear") {
 					hL = combinedLub; hR = combinedDub
 				} else {
 					hL = combinedDub; hR = combinedLub
@@ -1677,7 +1698,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					let pannedB = self.applyStereoPan(inL: brownL[idxNoise], inR: brownR[idxNoise], pos: posB, vol: vBrown * 0.5, intimate: state.enableIntimateMode)
 					chunkBL = pannedB.0; chunkBR = pannedB.1
 				}
-				
+
 				var chunkWL: Float = 0; var chunkWR: Float = 0
 				if vWhite > 0 {
 					let posW = self.getPanPos(mode: state.panWhiteIndex, time: tChunk)
@@ -1703,7 +1724,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					if state.syncBreathing {
 						let syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration)
 						let phaseBeat = self.beatCounter % 8
-						
+
 						if phaseBeat < 4 {
 							usingInhale = true
 							let inhalePhase = Float(sin(Double.pi * syncPhase / 4.0))
@@ -1713,7 +1734,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							let exhalePhase = Float(sin(Double.pi * (syncPhase - 4.0) / 4.0))
 							breathEnv = max(0.0, exhalePhase) * 0.6
 						}
-						
+
 						if isBeat {
 							if phaseBeat == 0 {
 								DispatchQueue.main.async { self.currentBreathingPhase = "Inhale (Sync)"; if !state.useRealBreathing { self.playBreathingCue(type: "INHALE") } }
@@ -1724,7 +1745,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 								DispatchQueue.main.async { self.playBreathingCue(type: anchor, isAnchor: true) }
 							}
 						}
-						
+
 						if state.useRealBreathing {
 							let currentSegment = usingInhale ? 1 : 2
 							if currentSegment != self.syncedRealBreathSegment {
@@ -1752,7 +1773,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							sampleIdxForRealBreath = Int(((breathPhase - 0.5) / 0.45) * (0.45 * breathDuration * self.sampleRate))
 						}
 					}
-					
+
 					var breathSampleL: Float = 0; var breathSampleR: Float = 0
 					if state.useRealBreathing {
 						if usingInhale && !realInhale.isEmpty {
@@ -1797,7 +1818,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: postReverbMixer, format: format)
 			engine.connect(meditationPlayerNode, to: postReverbMixer, format: format)
-			
+
 			engine.connect(postReverbMixer, to: proximityEqNode, format: format)
 			engine.connect(proximityEqNode, to: hspEqNode, format: format)
 			engine.connect(hspEqNode, to: engine.mainMixerNode, format: format)
@@ -1812,11 +1833,11 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private func getPanPos(mode: Int, time: Float) -> Float {
 		let option = panOptions[mode]
 		switch option {
-		case "Center": return 0.0
-		case "Left": return -1.0
-		case "Right": return 1.0
-		case "Soft Left": return -0.5
-		case "Soft Right": return 0.5
+		case String(localized: "Center"): return 0.0
+		case String(localized: "Left"): return -1.0
+		case String(localized: "Right"): return 1.0
+		case String(localized: "Soft Left"): return -0.5
+		case String(localized: "Soft Right"): return 0.5
 		default:
 			var period: Float = 60.0
 			if option.contains("1 Minute") { period = 60.0 }
@@ -1833,15 +1854,15 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let keepL = pos > 0 ? 1.0 - pos : 1.0
 		let keepR = pos < 0 ? 1.0 - abs(pos) : 1.0
 		let norm = 1.0 + abs(pos)
-		
+
 		var outL = ((inL * keepL + inR * bleedToL) / norm) * vol
 		var outR = ((inR * keepR + inL * bleedToR) / norm) * vol
-		
+
 		if intimate {
 			if pos > 0 { outL *= Float(1.0 - (pos * 0.7)) }
 			if pos < 0 { outR *= Float(1.0 - (abs(pos) * 0.7)) }
 		}
-		
+
 		return (outL, outR)
 	}
 
@@ -1851,7 +1872,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let u2 = Float.random(in: 0..<1)
 		return sqrt(-2.0 * log(u1)) * cos(2.0 * Float.pi * u2)
 	}
-	
+
 	private func generateWhiteNoise(length: Int) -> [Float] {
 		let crossfadeLength = Int(sampleRate * 2.0)
 		let totalLength = length + crossfadeLength
@@ -1947,10 +1968,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			localDubEnv[i] = Float(dEnv)
 
 			let combinedLub = Float((lub + subLub)); let combinedDub = Float((dub + subDub))
-			if placement == "Center Beats & Flow" {
+			if placement == String(localized: "Center Beats & Flow") {
 				localLubL[i] = combinedLub * 0.85; localLubR[i] = combinedLub * 0.85
 				localDubL[i] = combinedDub * 0.85; localDubR[i] = combinedDub * 0.85
-			} else if placement == "Lub Left Ear / Dub Right Ear" {
+			} else if placement == String(localized: "Lub Left Ear / Dub Right Ear") {
 				localLubL[i] = combinedLub; localLubR[i] = 0; localDubL[i] = 0; localDubR[i] = combinedDub
 			} else {
 				localLubL[i] = 0; localLubR[i] = combinedLub; localDubL[i] = combinedDub; localDubR[i] = 0
@@ -1984,13 +2005,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		clk = [Float](repeating: 0, count: nClockProto)
 		for i in 0..<nClockProto {
 			let tc = Double(i) / sampleRate; let randomGaussian = gaussianRandom() * 0.3
-			if clkType == "Quartz Wall Clock" {
+			if clkType == String(localized: "Quartz Wall Clock") {
 				let body = (sin(2 * Double.pi * 1200 * tc) * 0.15 + sin(2 * Double.pi * 2000 * tc) * 0.05) * exp(-120 * tc)
 				clk[i] = Float(body) + randomGaussian * Float(exp(-300 * tc))
-			} else if clkType == "Pocket Watch" {
+			} else if clkType == String(localized: "Pocket Watch") {
 				let body = (sin(2 * Double.pi * 4000 * tc) * 0.1 + sin(2 * Double.pi * 6000 * tc) * 0.05) * exp(-200 * tc)
 				clk[i] = Float(body) + randomGaussian * Float(exp(-800 * tc)) * 1.5
-			} else if clkType == "Grandfather Clock" {
+			} else if clkType == String(localized: "Grandfather Clock") {
 				let body = (sin(2 * Double.pi * 350 * tc) * 0.2 + sin(2 * Double.pi * 800 * tc) * 0.1) * exp(-60 * tc)
 				clk[i] = Float(body) + randomGaussian * Float(exp(-500 * tc)) * 1.2
 			} else {
@@ -2439,7 +2460,7 @@ struct GeneratorView: View {
 
 					Toggle("Sync to Heartbeat", isOn: $engine.syncClick)
 				}.padding(.vertical, 4)
-				
+
 				VStack(alignment: .leading) {
 					Text("Absolute Room Masking (White Noise)").bold()
 					Slider(value: $engine.whiteVolume, in: 0...1).accessibilityLabel("White Noise Volume")
@@ -2512,7 +2533,7 @@ struct GeneratorView: View {
 					}
 				}
 				.pickerStyle(MenuPickerStyle())
-				
+
 				Picker("White Noise Position", selection: $engine.panWhiteIndex) {
 					ForEach(0..<engine.panOptions.count, id: \.self) { index in
 						Text(engine.panOptions[index]).tag(index)
@@ -2609,7 +2630,7 @@ struct SleepTimerView: View {
 							Slider(value: $engine.alarmVolume, in: 0...1)
 						}
 						HStack {
-							Text(engine.alarmNameStorage)
+							Text(engine.alarmNameStorage == "None" ? String(localized: "None") : engine.alarmNameStorage)
 							Spacer()
 							Menu("Alarm Sound") {
 								Button("From Files") { presentFilePicker(for: .alarm) }
@@ -2628,7 +2649,7 @@ struct SleepTimerView: View {
 
 				Section(header: Text("Sleep Meditation")) {
 					HStack {
-						Text(engine.meditationNameStorage)
+						Text(engine.meditationNameStorage == "None" ? String(localized: "None") : engine.meditationNameStorage)
 						Spacer()
 						Menu("Select Meditation") {
 							Button("From Files") { presentFilePicker(for: .meditation) }
