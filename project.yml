@@ -1,6 +1,10 @@
 name: SleepEngine
 options:
   bundleIdPrefix: com.localdev
+  developmentLanguage: en
+  localizations:
+    - en
+    - de
 targets:
   SleepEngine:
     type: application

@@ -1,0 +1,174 @@
+/* Profiles */
+"ASMR Blood Flow (60 BPM)" = "ASMR Blood Flow (60 BPM)";
+"Standard Resting Heart (72 BPM)" = "Standard Resting Heart (72 BPM)";
+"Womb Simulation (55 BPM)" = "Womb Simulation (55 BPM)";
+"Zen Meditation (50 BPM)" = "Zen Meditation (50 BPM)";
+"Athletic Recovery (45 BPM)" = "Athletic Recovery (45 BPM)";
+"Gentle Drift (42 BPM)" = "Gentle Drift (42 BPM)";
+"Deep Sleep Resonance (40 BPM)" = "Deep Sleep Resonance (40 BPM)";
+"Hibernation State (35 BPM)" = "Hibernation State (35 BPM)";
+"Deep Trance (30 BPM)" = "Deep Trance (30 BPM)";
+"Slow Wave Sleep (25 BPM)" = "Slow Wave Sleep (25 BPM)";
+"Cinematic Oceanic (18 BPM)" = "Cinematic Oceanic (18 BPM)";
+"Soft Pillowy Pulse (62 BPM)" = "Soft Pillowy Pulse (62 BPM)";
+
+/* Panning & Placement */
+"Center" = "Center";
+"Left" = "Left";
+"Right" = "Right";
+"Soft Left" = "Soft Left";
+"Soft Right" = "Soft Right";
+"1 Minute Slow Shift" = "1 Minute Slow Shift";
+"5 Minute Slow Shift" = "5 Minute Slow Shift";
+"30 Minute Extra Slow Shift" = "30 Minute Extra Slow Shift";
+"1 Hour Extra Slow Shift" = "1 Hour Extra Slow Shift";
+"Center Beats & Flow" = "Center Beats & Flow";
+"Lub Left Ear / Dub Right Ear" = "Lub Left Ear / Dub Right Ear";
+"Lub Right Ear / Dub Left Ear" = "Lub Right Ear / Dub Left Ear";
+
+/* Instruments & Types */
+"Quartz Wall Clock" = "Quartz Wall Clock";
+"Pocket Watch" = "Pocket Watch";
+"Grandfather Clock" = "Grandfather Clock";
+"Metronome" = "Metronome";
+"Dry / No Reverb" = "Dry / No Reverb";
+"Small Room" = "Small Room";
+"Medium Hall" = "Medium Hall";
+"Large Hall" = "Large Hall";
+"Cathedral" = "Cathedral";
+"Medium Room" = "Medium Room";
+"Large Room" = "Large Room";
+"Large Room 2" = "Large Room 2";
+"Delta Waves (2Hz - Deep Sleep)" = "Delta Waves (2Hz - Deep Sleep)";
+"Theta Waves (6Hz - Dreaming)" = "Theta Waves (6Hz - Dreaming)";
+"Alpha Waves (10Hz - Relaxation)" = "Alpha Waves (10Hz - Relaxation)";
+"Simultaneous" = "Simultaneous";
+"Tick-Tock (Normal First)" = "Tick-Tock (Normal First)";
+"Tock-Tick (Soft First)" = "Tock-Tick (Soft First)";
+
+/* UI & Sections */
+"Soundscape" = "Soundscape";
+"Generator" = "Generator";
+"Breathing" = "Breathing";
+"Sleep" = "Sleep";
+"Settings" = "Settings";
+"Organic Elements" = "Organic Elements";
+"Rain Volume" = "Rain Volume";
+"Organic Heartbeat Volume" = "Organic Heartbeat Volume";
+"Imported Audio" = "Imported Audio";
+"No files imported." = "No files imported.";
+"Import" = "Import";
+"From Files" = "From Files";
+"From Apple Music" = "From Apple Music";
+"Delay after Meditation" = "Delay after Meditation";
+
+/* Generator */
+"Base Speed & Tone Profile" = "Base Speed & Tone Profile";
+"Tone Profile" = "Tone Profile";
+"Heartbeat Dynamics" = "Heartbeat Dynamics";
+"Fluid Slow Down Over Time" = "Fluid Slow Down Over Time";
+"Target BPM: %lld" = "Target BPM: %lld";
+"Duration: %lld Minutes" = "Duration: %lld Minutes";
+"Organic Human Variation (RSA)" = "Organic Human Variation (RSA)";
+"Naturally speeds up and slows down the heartbeat with a simulated breath cycle." = "Naturally speeds up and slows down the heartbeat with a simulated breath cycle.";
+"Procedural Layer Mixer" = "Procedural Layer Mixer";
+"Synth Heartbeat" = "Synth Heartbeat";
+"Synth Heartbeat Volume" = "Synth Heartbeat Volume";
+"Clock Ticking" = "Clock Ticking";
+"Clock Volume" = "Clock Volume";
+"Clock Type" = "Clock Type";
+"Sync to Heartbeat" = "Sync to Heartbeat";
+"Click Track" = "Click Track";
+"Click Volume" = "Click Volume";
+"Soft Click Track" = "Soft Click Track";
+"Soft Click Volume" = "Soft Click Volume";
+"Boost Soft Click" = "Boost Soft Click";
+"Raises only the soft click layer above its normal slider range." = "Raises only the soft click layer above its normal slider range.";
+"Click Pattern" = "Click Pattern";
+"Absolute Room Masking (White Noise)" = "Absolute Room Masking (White Noise)";
+"White Noise Volume" = "White Noise Volume";
+"Brown Noise" = "Brown Noise";
+"Brown Noise Volume" = "Brown Noise Volume";
+"Slow Breathing Base" = "Slow Breathing Base";
+"Slow Breathing Volume" = "Slow Breathing Volume";
+"Binaural Brainwave Entrainment" = "Binaural Brainwave Entrainment";
+"Binaural Beat Volume" = "Binaural Beat Volume";
+"Entrainment Target" = "Entrainment Target";
+
+/* Spatial Audio */
+"Spatial Audio Panning" = "Spatial Audio Panning";
+"Heartbeat Anatomy" = "Heartbeat Anatomy";
+"Heartbeat Position" = "Heartbeat Position";
+"Breathing Position" = "Breathing Position";
+"Clock Position" = "Clock Position";
+"Click Position" = "Click Position";
+"Soft Click Position" = "Soft Click Position";
+"White Noise Position" = "White Noise Position";
+"Brown Noise Position" = "Brown Noise Position";
+
+/* Breathing */
+"Current Phase: %@" = "Current Phase: %@";
+"Sync Cues to Heartbeat Rhythm" = "Sync Cues to Heartbeat Rhythm";
+"4-7-8 Relax" = "4-7-8 Relax";
+"Box Breathing" = "Box Breathing";
+"Stop Exercise" = "Stop Exercise";
+"Manual exercises are disabled because breathing is actively bound to the heartbeat BPM." = "Manual exercises are disabled because breathing is actively bound to the heartbeat BPM.";
+"Ready" = "Ready";
+
+/* Sleep & Timer */
+"Night Fade-Out (Sleep Timer)" = "Night Fade-Out (Sleep Timer)";
+"Enable Night Fade-Out" = "Enable Night Fade-Out";
+"Play for: %.1f hours" = "Play for: %.1f hours";
+"Fade out over: %lld minutes" = "Fade out over: %lld minutes";
+"Morning Alarm" = "Morning Alarm";
+"Enable Morning Alarm" = "Enable Morning Alarm";
+"Alarm Time" = "Alarm Time";
+"Soundscape fade in: Off" = "Soundscape fade in: Off";
+"Soundscape fade in: %lld minutes" = "Soundscape fade in: %lld minutes";
+"Alarm Volume" = "Alarm Volume";
+"Alarm Sound" = "Alarm Sound";
+"Clear" = "Clear";
+"Stop Alarm" = "Stop Alarm";
+"Sleep Meditation" = "Sleep Meditation";
+"Select Meditation" = "Select Meditation";
+"The main soundscape will automatically fade in across the duration of this meditation." = "The main soundscape will automatically fade in across the duration of this meditation.";
+"Simulation & Testing" = "Simulation & Testing";
+"Simulate Night Fade-Out" = "Simulate Night Fade-Out";
+"Sleep Settings" = "Sleep Settings";
+"None" = "None";
+
+/* Settings */
+"Highly Sensitive Person (HSP) Features" = "Highly Sensitive Person (HSP) Features";
+"HSP Acoustic Softening" = "HSP Acoustic Softening";
+"Applies a global low-pass filter to muffle harsh high frequencies and soften the overall soundscape." = "Applies a global low-pass filter to muffle harsh high frequencies and soften the overall soundscape.";
+"Route Meditation through HSP EQ" = "Route Meditation through HSP EQ";
+"Deep Sleep Acoustic Dive" = "Deep Sleep Acoustic Dive";
+"Slowly rolls off high frequencies during the fade-out, sounding like sinking underwater." = "Slowly rolls off high frequencies during the fade-out, sounding like sinking underwater.";
+"Acoustics & Space" = "Acoustics & Space";
+"Room Reverb" = "Room Reverb";
+"Imported Audio in Reverb Engine" = "Imported Audio in Reverb Engine";
+"Turn off if AirPods crackle on older iOS versions." = "Turn off if AirPods crackle on older iOS versions.";
+"Voice Cues route through Reverb" = "Voice Cues route through Reverb";
+"Breathing Audio Setup" = "Breathing Audio Setup";
+"Use Real Breathing Recordings" = "Use Real Breathing Recordings";
+"Replaces voice cues with real breathing recordings." = "Replaces voice cues with real breathing recordings.";
+"Use Whispered Voice Cues" = "Use Whispered Voice Cues";
+"Intimacy & Immersion" = "Intimacy & Immersion";
+"Intimate Proximity Mode" = "Intimate Proximity Mode";
+"Boosts proximity frequencies and simulates head-shadowing for an ASMR-like close-up feel." = "Boosts proximity frequencies and simulates head-shadowing for an ASMR-like close-up feel.";
+"Haptic Heartbeat Synchronization" = "Haptic Heartbeat Synchronization";
+"Uses the Taptic Engine to let you physically feel the heartbeat." = "Uses the Taptic Engine to let you physically feel the heartbeat.";
+"Enhanced Vocal Anchors" = "Enhanced Vocal Anchors";
+"Spawns random spatial whispers around your head during breathing holds." = "Spawns random spatial whispers around your head during breathing holds.";
+"Audio Behavior" = "Audio Behavior";
+"Mix with other apps" = "Mix with other apps";
+"Allows Sleep Engine to play while watching YouTube or listening to podcasts." = "Allows Sleep Engine to play while watching YouTube or listening to podcasts.";
+"Fade to Silent when Headphones Disconnect" = "Fade to Silent when Headphones Disconnect";
+"Fades the soundscape out over 10 seconds when headphones are removed, then keeps only the silent alarm keeper active." = "Fades the soundscape out over 10 seconds when headphones are removed, then keeps only the silent alarm keeper active.";
+
+/* Controls */
+"Master Output Volume" = "Master Output Volume";
+"Stop All Audio" = "Stop All Audio";
+"Play Master" = "Play Master";
+"Audio stream active." = "Audio stream active.";
+"Soundscape halted." = "Soundscape halted.";
