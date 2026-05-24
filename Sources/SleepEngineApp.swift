@@ -2757,6 +2757,7 @@ struct SettingsView: View {
 
 struct ContentView: View {
 	@StateObject var engine = AudioEngineManager()
+	@State private var selectedTab = 0
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -2777,14 +2778,111 @@ struct ContentView: View {
 			}
 			.background(Color(UIColor.secondarySystemBackground).shadow(radius: 1))
 
-			TabView {
-				SoundscapeView(engine: engine).tabItem { Label("Soundscape", systemImage: "waveform") }
-				GeneratorView(engine: engine).tabItem { Label("Generator", systemImage: "bolt.heart") }
-				BreathingView(engine: engine).tabItem { Label("Breathing", systemImage: "lungs") }
-				SleepTimerView(engine: engine).tabItem { Label("Sleep", systemImage: "moon.zzz") }
-				SettingsView(engine: engine).tabItem { Label("Settings", systemImage: "gear") }
+			TabView(selection: $selectedTab) {
+				SoundscapeView(engine: engine)
+					.tabItem { Label("Soundscape", systemImage: "waveform") }
+					.tag(0)
+				GeneratorView(engine: engine)
+					.tabItem { Label("Generator", systemImage: "bolt.heart") }
+					.tag(1)
+				BreathingView(engine: engine)
+					.tabItem { Label("Breathing", systemImage: "lungs") }
+					.tag(2)
+				SleepTimerView(engine: engine)
+					.tabItem { Label("Sleep", systemImage: "moon.zzz") }
+					.tag(3)
+				SettingsView(engine: engine)
+					.tabItem { Label("Settings", systemImage: "gear") }
+					.tag(4)
+			}
+			.onChange(of: selectedTab) { _ in
+				BeepGenerator.shared.playTabBeep()
 			}
 		}
+		.toggleStyle(SoundToggleStyle())
+	}
+}
+
+class BeepGenerator {
+	static let shared = BeepGenerator()
+
+	private var tabPlayer: AVAudioPlayer?
+	private var switchPlayer: AVAudioPlayer?
+
+	private init() {
+		tabPlayer = makeBeepPlayer(frequency: 880.0, duration: 0.05, volume: 0.08)
+		switchPlayer = makeBeepPlayer(frequency: 587.33, duration: 0.04, volume: 0.06)
+	}
+
+	func playTabBeep() {
+		tabPlayer?.currentTime = 0
+		tabPlayer?.play()
+	}
+
+	func playSwitchBeep() {
+		switchPlayer?.currentTime = 0
+		switchPlayer?.play()
+	}
+
+	private func makeBeepPlayer(frequency: Double, duration: Double, volume: Float) -> AVAudioPlayer? {
+		let sampleRate = 44100.0
+		let totalSamples = Int(sampleRate * duration)
+
+		var audioData = Data()
+		audioData.append(Data("RIFF".utf8))
+		let subchunk2Size = totalSamples * 2
+		let chunkSize = 36 + subchunk2Size
+		withUnsafeBytes(of: Int32(chunkSize)) { audioData.append(contentsOf: $0) }
+
+		audioData.append(Data("WAVE".utf8))
+		audioData.append(Data("fmt ".utf8))
+		withUnsafeBytes(of: Int32(16)) { audioData.append(contentsOf: $0) }
+		withUnsafeBytes(of: Int16(1)) { audioData.append(contentsOf: $0) }
+		withUnsafeBytes(of: Int16(1)) { audioData.append(contentsOf: $0) }
+		withUnsafeBytes(of: Int32(sampleRate)) { audioData.append(contentsOf: $0) }
+		withUnsafeBytes(of: Int32(Int(sampleRate) * 2)) { audioData.append(contentsOf: $0) }
+		withUnsafeBytes(of: Int16(2)) { audioData.append(contentsOf: $0) }
+		withUnsafeBytes(of: Int16(16)) { audioData.append(contentsOf: $0) }
+
+		audioData.append(Data("data".utf8))
+		withUnsafeBytes(of: Int32(subchunk2Size)) { audioData.append(contentsOf: $0) }
+
+		for i in 0..<totalSamples {
+			let t = Double(i) / sampleRate
+			let angle = 2.0 * .pi * frequency * t
+			let sineVal = sin(angle)
+
+			let attack = 0.005
+			let decay = 0.015
+			var env = 1.0
+			if t < attack {
+				env = t / attack
+			} else if t > duration - decay {
+				env = max(0, (duration - t) / decay)
+			}
+
+			let amplitude = 32767.0 * Double(volume)
+			let sampleVal = Int16(sineVal * env * amplitude)
+			withUnsafeBytes(of: sampleVal) { audioData.append(contentsOf: $0) }
+		}
+
+		do {
+			let player = try AVAudioPlayer(data: audioData)
+			player.prepareToPlay()
+			return player
+		} catch {
+			return nil
+		}
+	}
+}
+
+struct SoundToggleStyle: ToggleStyle {
+	func makeBody(configuration: Configuration) -> some View {
+		Toggle(configuration)
+			.toggleStyle(.switch)
+			.onChange(of: configuration.isOn) { _ in
+				BeepGenerator.shared.playSwitchBeep()
+			}
 	}
 }
 
