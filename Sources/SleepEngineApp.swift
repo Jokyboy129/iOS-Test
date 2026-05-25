@@ -99,6 +99,7 @@ struct AudioRenderState {
 	var selectedProfileIndex: Int = 0
 	var placementIndex: Int = 0
 	var heartbeatVolume: Float = 0
+	var faceTouchVolume: Float = 0
 	var clockVolume: Float = 0
 	var softClickVolume: Float = 0
 	var brownVolume: Float = 0
@@ -227,6 +228,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var masterVolume: Double = 1.0 { didSet { save("masterVolume", masterVolume); updateVolumes() } }
 
 	@Published var heartbeatVolume: Double = 0.0 { didSet { save("heartbeatVolume", heartbeatVolume); syncRenderState() } }
+	@Published var faceTouchVolume: Double = 0.0 { didSet { save("faceTouchVolume", faceTouchVolume); syncRenderState() } }
 	@Published var clockVolume: Double = 0.0 { didSet { save("clockVolume", clockVolume); syncRenderState() } }
 	@Published var softClickVolume: Double = 0.0 { didSet { save("softClickVolume", softClickVolume); syncRenderState() } }
 	@Published var brownVolume: Double = 0.0 { didSet { save("brownVolume", brownVolume); syncRenderState() } }
@@ -336,6 +338,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	private var brownL = [Float]()
 	private var brownR = [Float]()
+	private var faceTouchL = [Float]()
+	private var faceTouchR = [Float]()
 	private var whiteL = [Float]()
 	private var whiteR = [Float]()
 	private var breathL = [Float]()
@@ -363,6 +367,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var softClickPlayIdx: Int = Int.max
 
 	private var smoothedVHeart: Float = 0.0
+	private var smoothedVFaceTouch: Float = 0.0
 	private var smoothedVClock: Float = 0.0
 	private var smoothedVBrown: Float = 0.0
 	private var smoothedVWhite: Float = 0.0
@@ -392,6 +397,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.masterVolume = ud.object(forKey: "masterVolume") == nil ? 1.0 : ud.double(forKey: "masterVolume")
 
 		self.heartbeatVolume = ud.double(forKey: "heartbeatVolume")
+		self.faceTouchVolume = ud.double(forKey: "faceTouchVolume")
 		self.clockVolume = ud.double(forKey: "clockVolume")
 		self.softClickVolume = ud.double(forKey: "softClickVolume")
 		self.brownVolume = ud.double(forKey: "brownVolume")
@@ -460,13 +466,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		hspEqNode.bands[0].bypass = !self.enableHSPMode
 
 		proximityEqNode.bands[0].filterType = .lowShelf
-		proximityEqNode.bands[0].frequency = 250.0
-		proximityEqNode.bands[0].gain = 8.0
+		proximityEqNode.bands[0].frequency = 220.0
+		proximityEqNode.bands[0].gain = 11.0
 		proximityEqNode.bands[0].bypass = false
 
 		proximityEqNode.bands[1].filterType = .highShelf
-		proximityEqNode.bands[1].frequency = 6000.0
-		proximityEqNode.bands[1].gain = 5.0
+		proximityEqNode.bands[1].frequency = 4800.0
+		proximityEqNode.bands[1].gain = 7.5
 		proximityEqNode.bands[1].bypass = false
 
 		proximityEqNode.bypass = !self.enableIntimateMode
@@ -504,6 +510,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		newState.selectedProfileIndex = self.selectedProfileIndex
 		newState.placementIndex = self.placementIndex
 		newState.heartbeatVolume = Float(self.heartbeatVolume)
+		newState.faceTouchVolume = Float(self.faceTouchVolume)
 		newState.clockVolume = Float(self.clockVolume)
 		newState.softClickVolume = Float(self.softClickVolume)
 		newState.brownVolume = Float(self.brownVolume)
@@ -760,6 +767,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		clickPlayIdx = Int.max
 		softClickPlayIdx = Int.max
 		smoothedVHeart = 0.0
+		smoothedVFaceTouch = 0.0
 		smoothedVClock = 0.0
 		smoothedVBrown = 0.0
 		smoothedVWhite = 0.0
@@ -1494,6 +1502,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			let lubEnv = self.lubEnv; let dubEnv = self.dubEnv; let brownL = self.brownL; let brownR = self.brownR
 			let whiteL = self.whiteL; let whiteR = self.whiteR
 			let breathL = self.breathL; let breathR = self.breathR; let whooshL = self.whooshL; let whooshR = self.whooshR
+			let faceTouchL = self.faceTouchL; let faceTouchR = self.faceTouchR
 			let clk = self.clk; let click = self.clickBuffer; let clickSoft = self.clickSoftBuffer; let realInhale = self.realInhaleBuffer; let realExhale = self.realExhaleBuffer
 			let nBeat = self.nBeat; let nNoise = self.nNoise
 			let config = self.profiles[state.selectedProfileIndex]
@@ -1505,6 +1514,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			let targetVWhite = state.whiteVolume
 			let targetVClick = state.clickVolume; let targetVSoftClick = state.softClickVolume
 			let targetVBinaural = state.binauralVolume
+			let targetVFaceTouch = state.faceTouchVolume
 
 			let smoothFactor: Float = 0.005
 			let dt = 1.0 / self.sampleRate
@@ -1514,6 +1524,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 			for frame in 0..<Int(frameCount) {
 				self.smoothedVHeart += (targetVHeart - self.smoothedVHeart) * smoothFactor
+				self.smoothedVFaceTouch += (targetVFaceTouch - self.smoothedVFaceTouch) * smoothFactor
 				self.smoothedVClock += (targetVClock - self.smoothedVClock) * smoothFactor
 				self.smoothedVBrown += (targetVBrown - self.smoothedVBrown) * smoothFactor
 				self.smoothedVWhite += (targetVWhite - self.smoothedVWhite) * smoothFactor
@@ -1522,11 +1533,11 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				self.smoothedVSoftClick += (targetVSoftClick - self.smoothedVSoftClick) * smoothFactor
 				self.smoothedVBinaural += (targetVBinaural - self.smoothedVBinaural) * smoothFactor
 
-				let vHeart = self.smoothedVHeart; let vClock = self.smoothedVClock; let vBrown = self.smoothedVBrown
+				let vHeart = self.smoothedVHeart; let vFaceTouch = self.smoothedVFaceTouch; let vClock = self.smoothedVClock; let vBrown = self.smoothedVBrown
 				let vWhite = self.smoothedVWhite
 				let vBreath = self.smoothedVBreath; let vClick = self.smoothedVClick; let vSoftClick = self.smoothedVSoftClick; let vBinaural = self.smoothedVBinaural
 				let softClickBoost: Float = state.softClickBoostEnabled ? 2.5 : 1.0
-				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vWhite * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vSoftClick * 0.3 * softClickBoost) + (vBinaural * 0.4)
+				let totalGain = 1.0 + (vClock * 0.4) + (vBrown * 0.5) + (vWhite * 0.5) + (vBreath * 0.2) + (vClick * 0.3) + (vSoftClick * 0.3 * softClickBoost) + (vBinaural * 0.4) + (vFaceTouch * 0.3)
 
 				let currentFrame = self.frameIdx + frame
 				let timeInSeconds = Double(currentFrame) / self.sampleRate
@@ -1791,8 +1802,15 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 				}
 
-				let finalL = ((chunkHL + chunkCL + chunkBL + chunkWL + chunkBrL + chunkClickL + chunkBinL) / totalGain) * state.soundscapeMultiplier
-				let finalR = ((chunkHR + chunkCR + chunkBR + chunkWR + chunkBrR + chunkClickR + chunkBinR) / totalGain) * state.soundscapeMultiplier
+				var chunkFaceTouchL: Float = 0; var chunkFaceTouchR: Float = 0
+				if vFaceTouch > 0 && !faceTouchL.isEmpty {
+					let idx = currentFrame % faceTouchL.count
+					chunkFaceTouchL = faceTouchL[idx] * vFaceTouch * 1.5
+					chunkFaceTouchR = faceTouchR[idx] * vFaceTouch * 1.5
+				}
+
+				let finalL = ((chunkHL + chunkCL + chunkBL + chunkWL + chunkBrL + chunkClickL + chunkBinL + chunkFaceTouchL) / totalGain) * state.soundscapeMultiplier
+				let finalR = ((chunkHR + chunkCR + chunkBR + chunkWR + chunkBrR + chunkClickR + chunkBinR + chunkFaceTouchR) / totalGain) * state.soundscapeMultiplier
 				ptrL?[frame] = finalL; ptrR?[frame] = finalR
 			}
 			self.frameIdx += Int(frameCount)
@@ -1855,8 +1873,17 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		var outR = ((inR * keepR + inL * bleedToR) / norm) * vol
 
 		if intimate {
-			if pos > 0 { outL *= Float(1.0 - (pos * 0.7)) }
-			if pos < 0 { outR *= Float(1.0 - (abs(pos) * 0.7)) }
+			let absPos = abs(pos)
+			let closerEarBoost = Float(1.0 + absPos * 0.45)
+			let oppositeEarReduction = Float(pow(Double(1.0 - absPos), 1.6))
+			
+			if pos > 0 {
+				outR *= closerEarBoost
+				outL *= oppositeEarReduction
+			} else if pos < 0 {
+				outL *= closerEarBoost
+				outR *= oppositeEarReduction
+			}
 		}
 
 		return (outL, outR)
@@ -1996,6 +2023,83 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 		whiteL = generateWhiteNoise(length: nNoise); whiteR = generateWhiteNoise(length: nNoise)
 		whooshL = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf); whooshR = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf)
+
+		// Synthesize discrete Gentle Face Touch presses (16 seconds loop)
+		let nFaceTouch = Int(sampleRate * 16.0)
+		var localFaceTouchL = [Float](repeating: 0, count: nFaceTouch)
+		var localFaceTouchR = [Float](repeating: 0, count: nFaceTouch)
+
+		let lowRumbleFilter = BiQuadFilter()
+		let highFrictionFilter = BiQuadFilter()
+		lowRumbleFilter.setLowpass(frequency: 65.0, Q: 0.7, sampleRate: sampleRate)
+		highFrictionFilter.setLowpass(frequency: 1200.0, Q: 0.5, sampleRate: sampleRate)
+
+		for i in 0..<nFaceTouch {
+			let t = Double(i) / sampleRate
+			let pressIndex = Int(t / 4.0)
+			let s = (t - Double(pressIndex) * 4.0) / 4.0 // 0.0 to 1.0 within the press
+			let tPress = s * 4.0
+
+			// Raised sine/cosine volume envelope for slow touch-and-release
+			var env: Double = 0.0
+			if tPress < 1.2 {
+				env = pow(sin((Double.pi / 2.0) * tPress / 1.2), 2)
+			} else if tPress < 2.0 {
+				env = 1.0
+			} else if tPress < 3.5 {
+				env = pow(cos((Double.pi / 2.0) * (tPress - 2.0) / 1.5), 2)
+			} else {
+				env = 0.0
+			}
+
+			// Discrete panning position per press
+			let p: Float
+			if pressIndex == 0 {
+				p = -0.85 // Left Cheek
+			} else if pressIndex == 1 {
+				p = 0.85  // Right Cheek
+			} else if pressIndex == 2 {
+				p = 0.0   // Forehead / Center
+			} else {
+				p = -0.45 // Soft Left Jaw
+			}
+
+			// Organic hand micro-tremor (6Hz amplitude tremolo)
+			let tremor = 0.88 + 0.12 * sin(2.0 * Double.pi * 6.0 * t)
+			let noiseVal = gaussianRandom()
+			
+			// Extract low-frequency warm rumble and ultra-soft high-frequency contact friction
+			let rumble = lowRumbleFilter.process(Double(noiseVal))
+			let friction = highFrictionFilter.process(Double(noiseVal))
+			let monoSample = Float((rumble * 1.5 + friction * 0.015) * env * tremor * 0.45)
+
+			// Stereo Pan
+			let absP = abs(p)
+			let bleedToL = p < 0 ? absP : 0.0
+			let bleedToR = p > 0 ? p : 0.0
+			let keepL = p > 0 ? 1.0 - p : 1.0
+			let keepR = p < 0 ? 1.0 - absP : 1.0
+			let norm = 1.0 + absP
+
+			var outL = (monoSample * keepL + monoSample * bleedToL) / norm
+			var outR = (monoSample * keepR + monoSample * bleedToR) / norm
+
+			// Intimate Proximity spatialization
+			let closerEarBoost = 1.0 + absP * 0.45
+			let oppositeEarReduction = pow(1.0 - absP, 1.6)
+			if p > 0 {
+				outR *= closerEarBoost
+				outL *= oppositeEarReduction
+			} else if p < 0 {
+				outL *= closerEarBoost
+				outR *= oppositeEarReduction
+			}
+
+			localFaceTouchL[i] = outL
+			localFaceTouchR[i] = outR
+		}
+		self.faceTouchL = localFaceTouchL
+		self.faceTouchR = localFaceTouchR
 
 		let clockTypeIndex = self.clockTypeIndex; let nClockProto = Int(sampleRate * 1.5)
 		clk = [Float](repeating: 0, count: nClockProto)
@@ -2471,6 +2575,11 @@ struct GeneratorView: View {
 					Text("Slow Breathing Base").bold()
 					Slider(value: $engine.breathVolume, in: 0...1).accessibilityLabel("Slow Breathing Volume")
 				}.padding(.vertical, 4)
+
+				VStack(alignment: .leading) {
+					Text("Gentle Face Touch").bold()
+					Slider(value: $engine.faceTouchVolume, in: 0...1).accessibilityLabel("Gentle Face Touch Volume")
+				}.padding(.vertical, 4)
 			}
 
 			Section(header: Text("Binaural Brainwave Entrainment")) {
@@ -2873,6 +2982,34 @@ class BeepGenerator {
 		} catch {
 			return nil
 		}
+	}
+}
+
+class BiQuadFilter {
+	var b0: Double = 1.0, b1: Double = 0.0, b2: Double = 0.0
+	var a1: Double = 0.0, a2: Double = 0.0
+	var x1: Double = 0.0, x2: Double = 0.0
+	var y1: Double = 0.0, y2: Double = 0.0
+
+	func setLowpass(frequency: Double, Q: Double, sampleRate: Double) {
+		let w0 = 2.0 * Double.pi * frequency / sampleRate
+		let alpha = sin(w0) / (2.0 * Q)
+		let cosW0 = cos(w0)
+		let a0 = 1.0 + alpha
+		b0 = (1.0 - cosW0) / 2.0 / a0
+		b1 = (1.0 - cosW0) / a0
+		b2 = (1.0 - cosW0) / 2.0 / a0
+		a1 = -2.0 * cosW0 / a0
+		a2 = (1.0 - alpha) / a0
+	}
+
+	func process(_ x: Double) -> Double {
+		let y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+		x2 = x1
+		x1 = x
+		y2 = y1
+		y1 = y
+		return y
 	}
 }
 

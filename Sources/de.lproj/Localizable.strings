@@ -172,3 +172,7 @@
 "Play Master" = "Master abspielen";
 "Audio stream active." = "Audio-Stream aktiv.";
 "Soundscape halted." = "Klanglandschaft angehalten.";
+
+/* Face Touch */
+"Gentle Face Touch" = "Sanfte Gesichtsberührung";
+"Gentle Face Touch Volume" = "Sanfte Gesichtsberührung Lautstärke";
