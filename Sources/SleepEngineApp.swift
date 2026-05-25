@@ -2046,8 +2046,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		var localFaceTouchL = [Float](repeating: 0, count: nFaceTouch)
 		var localFaceTouchR = [Float](repeating: 0, count: nFaceTouch)
 
-		let touchRumbleFilter = BiQuadFilter()
-		touchRumbleFilter.setLowpass(frequency: 140.0, Q: 0.6, sampleRate: sampleRate)
+		let touchTapFilter = BiQuadFilter()
+		// Bandpass around 600Hz removes the "bomb" sub-bass and the "white noise" highs
+		touchTapFilter.setBandpass(frequency: 600.0, Q: 0.8, sampleRate: sampleRate)
 
 		// Choose a random sequence of panned positions for each of the 8 taps
 		let possiblePans: [Float] = [-0.85, -0.6, -0.3, 0.0, 0.3, 0.6, 0.85]
@@ -2065,21 +2066,21 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			var outL: Float = 0
 			var outR: Float = 0
 
-			if t >= tapTime && t < tapTime + 0.25 {
+			if t >= tapTime && t < tapTime + 0.15 {
 				let tTap = t - tapTime
 				let p = randomTapPans[tapIndex % 8]
 
-				// Non-Tonal skin-to-skin tapping: flat, pitchless lowpass white noise thud under 140Hz + 6ms digital pop protection
+				// Very short realistic tap. 2ms attack, rapid decay to prevent long-lasting noise.
 				var env: Double = 0.0
-				if tTap < 0.006 {
-					env = tTap / 0.006
+				if tTap < 0.002 {
+					env = tTap / 0.002
 				} else {
-					env = exp(-32.0 * (tTap - 0.006))
+					env = exp(-150.0 * (tTap - 0.002))
 				}
 				
-				let noiseVal = gaussianRandom()
-				let filteredNoise = touchRumbleFilter.process(Double(noiseVal))
-				let monoSample = Float(filteredNoise * env * 0.45)
+				let noiseVal = Double.random(in: -1.0...1.0)
+				let filteredNoise = touchTapFilter.process(noiseVal)
+				let monoSample = Float(filteredNoise * env * 1.5)
 
 				// Stereo Pan
 				let absP = abs(p)
@@ -3007,8 +3008,8 @@ class BeepGenerator {
 	private var switchPlayer: AVAudioPlayer?
 
 	private init() {
-		tabPlayer = makeTapPlayer(cutoff: 400.0, duration: 0.03, volume: 0.12)
-		switchPlayer = makeTapPlayer(cutoff: 250.0, duration: 0.035, volume: 0.10)
+		tabPlayer = makeTapPlayer(freq: 1200.0, duration: 0.015, volume: 0.15)
+		switchPlayer = makeTapPlayer(freq: 900.0, duration: 0.015, volume: 0.12)
 	}
 
 	func playTabBeep() {
@@ -3021,7 +3022,7 @@ class BeepGenerator {
 		switchPlayer?.play()
 	}
 
-	private func makeTapPlayer(cutoff: Double, duration: Double, volume: Float) -> AVAudioPlayer? {
+	private func makeTapPlayer(freq: Double, duration: Double, volume: Float) -> AVAudioPlayer? {
 		let sampleRate = 44100.0
 		let totalSamples = Int(sampleRate * duration)
 
@@ -3044,28 +3045,23 @@ class BeepGenerator {
 		audioData.append(Data("data".utf8))
 		withUnsafeBytes(of: Int32(subchunk2Size)) { audioData.append(contentsOf: $0) }
 
-		// One-pole lowpass filter setup
-		let dt = 1.0 / sampleRate
-		let rc = 1.0 / (2.0 * Double.pi * cutoff)
-		let alpha = dt / (rc + dt)
-		var lastOut = 0.0
-
 		for i in 0..<totalSamples {
 			let t = Double(i) / sampleRate
-			let whiteNoise = Double.random(in: -1.0...1.0)
-			lastOut += alpha * (whiteNoise - lastOut)
 
-			// Envelope: 3ms micro-attack, rapid exponential decay
-			let attack = 0.003
+			// Very short attack, extreme exponential decay for an "ultra-gentle click"
+			let attack = 0.001
 			var env = 1.0
 			if t < attack {
 				env = t / attack
 			} else {
-				env = exp(-85.0 * (t - attack))
+				env = exp(-250.0 * (t - attack))
 			}
+			
+			// A short high-frequency blip is perceived as a tiny click, much gentler than noise
+			let blip = sin(2.0 * Double.pi * freq * t)
 
-			let amplitude = 32767.0 * Double(volume) * 2.8
-			let sampleVal = Int16(lastOut * env * amplitude)
+			let amplitude = 32767.0 * Double(volume)
+			let sampleVal = Int16(blip * env * amplitude)
 			withUnsafeBytes(of: sampleVal) { audioData.append(contentsOf: $0) }
 		}
 
