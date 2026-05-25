@@ -2047,7 +2047,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		var localFaceTouchR = [Float](repeating: 0, count: nFaceTouch)
 
 		let touchRumbleFilter = BiQuadFilter()
-		touchRumbleFilter.setLowpass(frequency: 350.0, Q: 0.7, sampleRate: sampleRate)
+		touchRumbleFilter.setLowpass(frequency: 140.0, Q: 0.6, sampleRate: sampleRate)
 
 		// Choose a random sequence of panned positions for each of the 8 taps
 		let possiblePans: [Float] = [-0.85, -0.6, -0.3, 0.0, 0.3, 0.6, 0.85]
@@ -2069,18 +2069,17 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let tTap = t - tapTime
 				let p = randomTapPans[tapIndex % 8]
 
-				// Gentle skin-to-skin tapping: 180Hz thud + soft 350Hz lowpass skin rumble + 6ms digital pop protection
+				// Non-Tonal skin-to-skin tapping: flat, pitchless lowpass white noise thud under 140Hz + 6ms digital pop protection
 				var env: Double = 0.0
 				if tTap < 0.006 {
 					env = tTap / 0.006
 				} else {
-					env = exp(-28.0 * (tTap - 0.006))
+					env = exp(-32.0 * (tTap - 0.006))
 				}
 				
-				let sineVal = sin(2.0 * Double.pi * 180.0 * tTap)
 				let noiseVal = gaussianRandom()
 				let filteredNoise = touchRumbleFilter.process(Double(noiseVal))
-				let monoSample = Float((sineVal * 0.85 + filteredNoise * 0.15) * env * 0.28)
+				let monoSample = Float(filteredNoise * env * 0.45)
 
 				// Stereo Pan
 				let absP = abs(p)
@@ -3008,8 +3007,8 @@ class BeepGenerator {
 	private var switchPlayer: AVAudioPlayer?
 
 	private init() {
-		tabPlayer = makeBeepPlayer(frequency: 880.0, duration: 0.05, volume: 0.08)
-		switchPlayer = makeBeepPlayer(frequency: 587.33, duration: 0.04, volume: 0.06)
+		tabPlayer = makeTapPlayer(cutoff: 400.0, duration: 0.03, volume: 0.12)
+		switchPlayer = makeTapPlayer(cutoff: 250.0, duration: 0.035, volume: 0.10)
 	}
 
 	func playTabBeep() {
@@ -3022,7 +3021,7 @@ class BeepGenerator {
 		switchPlayer?.play()
 	}
 
-	private func makeBeepPlayer(frequency: Double, duration: Double, volume: Float) -> AVAudioPlayer? {
+	private func makeTapPlayer(cutoff: Double, duration: Double, volume: Float) -> AVAudioPlayer? {
 		let sampleRate = 44100.0
 		let totalSamples = Int(sampleRate * duration)
 
@@ -3045,22 +3044,28 @@ class BeepGenerator {
 		audioData.append(Data("data".utf8))
 		withUnsafeBytes(of: Int32(subchunk2Size)) { audioData.append(contentsOf: $0) }
 
+		// One-pole lowpass filter setup
+		let dt = 1.0 / sampleRate
+		let rc = 1.0 / (2.0 * Double.pi * cutoff)
+		let alpha = dt / (rc + dt)
+		var lastOut = 0.0
+
 		for i in 0..<totalSamples {
 			let t = Double(i) / sampleRate
-			let angle = 2.0 * .pi * frequency * t
-			let sineVal = sin(angle)
+			let whiteNoise = Double.random(in: -1.0...1.0)
+			lastOut += alpha * (whiteNoise - lastOut)
 
-			let attack = 0.005
-			let decay = 0.015
+			// Envelope: 3ms micro-attack, rapid exponential decay
+			let attack = 0.003
 			var env = 1.0
 			if t < attack {
 				env = t / attack
-			} else if t > duration - decay {
-				env = max(0, (duration - t) / decay)
+			} else {
+				env = exp(-85.0 * (t - attack))
 			}
 
-			let amplitude = 32767.0 * Double(volume)
-			let sampleVal = Int16(sineVal * env * amplitude)
+			let amplitude = 32767.0 * Double(volume) * 2.8
+			let sampleVal = Int16(lastOut * env * amplitude)
 			withUnsafeBytes(of: sampleVal) { audioData.append(contentsOf: $0) }
 		}
 
