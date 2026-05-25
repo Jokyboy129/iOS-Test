@@ -2035,6 +2035,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		brushHighFilter.setLowpass(frequency: 1200.0, Q: 0.5, sampleRate: sampleRate)
 
 		// Choose a random sequence of panned positions for each of the 4 sweeps
+		let possiblePans: [Float] = [-0.85, -0.6, -0.3, 0.0, 0.3, 0.6, 0.85]
 		var randomBrushPans = [Float]()
 		for _ in 0..<4 {
 			randomBrushPans.append(possiblePans.randomElement()!)
