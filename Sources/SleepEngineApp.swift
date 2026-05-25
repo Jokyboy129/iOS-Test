@@ -2046,9 +2046,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		var localFaceTouchL = [Float](repeating: 0, count: nFaceTouch)
 		var localFaceTouchR = [Float](repeating: 0, count: nFaceTouch)
 
-		let touchRumbleFilter = BiQuadFilter()
-		touchRumbleFilter.setLowpass(frequency: 150.0, Q: 0.7, sampleRate: sampleRate)
-
 		// Choose a random sequence of panned positions for each of the 8 taps
 		let possiblePans: [Float] = [-0.85, -0.6, -0.3, 0.0, 0.3, 0.6, 0.85]
 		var randomTapPans = [Float]()
@@ -2065,17 +2062,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			var outL: Float = 0
 			var outR: Float = 0
 
-			if t >= tapTime && t < tapTime + 0.3 {
+			if t >= tapTime && t < tapTime + 0.5 {
 				let tTap = t - tapTime
 				let p = randomTapPans[tapIndex % 8]
 
-				// Gentle tapping sound: warm 75Hz thump + soft lowpass contact rumble
-				let sineVal = sin(2.0 * Double.pi * 75.0 * tTap)
-				let noiseVal = gaussianRandom()
-				let filteredNoise = touchRumbleFilter.process(Double(noiseVal))
-				let env = exp(-22.0 * tTap)
+				// HSP-Friendly Tapping: 50Hz warm pure sine throb with 80ms fade-in attack & slow decay (zero sharp clicks)
+				var env: Double = 0.0
+				if tTap < 0.08 {
+					env = sin((Double.pi / 2.0) * (tTap / 0.08))
+				} else {
+					env = exp(-9.0 * (tTap - 0.08))
+				}
 				
-				let monoSample = Float((sineVal * 0.75 + filteredNoise * 0.25) * env * 0.3)
+				let sineVal = sin(2.0 * Double.pi * 50.0 * tTap)
+				let monoSample = Float(sineVal * env * 0.16)
 
 				// Stereo Pan
 				let absP = abs(p)
