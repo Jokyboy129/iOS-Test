@@ -2041,28 +2041,94 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		whiteL = generateWhiteNoise(length: nNoise); whiteR = generateWhiteNoise(length: nNoise)
 		whooshL = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf); whooshR = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf)
 
-		// Synthesize discrete Gentle Face Touch presses (32 seconds loop with randomized panning)
-		let nFaceTouch = Int(sampleRate * 32.0)
+		// Synthesize discrete Gentle Face Touch presses (20 seconds loop of slow, discrete taps)
+		let nFaceTouch = Int(sampleRate * 20.0)
 		var localFaceTouchL = [Float](repeating: 0, count: nFaceTouch)
 		var localFaceTouchR = [Float](repeating: 0, count: nFaceTouch)
 
-		let lowRumbleFilter = BiQuadFilter()
-		lowRumbleFilter.setLowpass(frequency: 45.0, Q: 1.1, sampleRate: sampleRate)
+		let touchRumbleFilter = BiQuadFilter()
+		touchRumbleFilter.setLowpass(frequency: 150.0, Q: 0.7, sampleRate: sampleRate)
 
-		// Choose a random sequence of panned positions for each of the 8 presses
-		let touchPositions: [Float] = [-0.85, -0.6, -0.35, 0.0, 0.35, 0.6, 0.85]
-		var randomPans = [Float]()
+		// Choose a random sequence of panned positions for each of the 8 taps
+		let possiblePans: [Float] = [-0.85, -0.6, -0.3, 0.0, 0.3, 0.6, 0.85]
+		var randomTapPans = [Float]()
 		for _ in 0..<8 {
-			randomPans.append(touchPositions.randomElement()!)
+			randomTapPans.append(possiblePans.randomElement()!)
 		}
 
 		for i in 0..<nFaceTouch {
 			let t = Double(i) / sampleRate
-			let pressIndex = Int(t / 4.0)
-			let s = (t - Double(pressIndex) * 4.0) / 4.0 // 0.0 to 1.0 within the press
+			let tapInterval = 2.5
+			let tapIndex = Int(t / tapInterval)
+			let tapTime = Double(tapIndex) * tapInterval + 1.0 // tap triggers at 1.0, 3.5, 6.0...
+			
+			var outL: Float = 0
+			var outR: Float = 0
+
+			if t >= tapTime && t < tapTime + 0.3 {
+				let tTap = t - tapTime
+				let p = randomTapPans[tapIndex % 8]
+
+				// Gentle tapping sound: warm 75Hz thump + soft lowpass contact rumble
+				let sineVal = sin(2.0 * Double.pi * 75.0 * tTap)
+				let noiseVal = gaussianRandom()
+				let filteredNoise = touchRumbleFilter.process(Double(noiseVal))
+				let env = exp(-22.0 * tTap)
+				
+				let monoSample = Float((sineVal * 0.75 + filteredNoise * 0.25) * env * 0.3)
+
+				// Stereo Pan
+				let absP = abs(p)
+				let bleedToL = p < 0 ? absP : 0.0
+				let bleedToR = p > 0 ? p : 0.0
+				let keepL = p > 0 ? 1.0 - p : 1.0
+				let keepR = p < 0 ? 1.0 - absP : 1.0
+				let norm = 1.0 + absP
+
+				outL = (monoSample * keepL + monoSample * bleedToL) / norm
+				outR = (monoSample * keepR + monoSample * bleedToR) / norm
+
+				// Intimate Proximity spatialization
+				let closerEarBoost = 1.0 + absP * 0.45
+				let oppositeEarReduction = pow(1.0 - absP, 1.6)
+				if p > 0 {
+					outR *= closerEarBoost
+					outL *= oppositeEarReduction
+				} else if p < 0 {
+					outL *= closerEarBoost
+					outR *= oppositeEarReduction
+				}
+			}
+
+			localFaceTouchL[i] = outL
+			localFaceTouchR[i] = outR
+		}
+		self.faceTouchL = localFaceTouchL
+		self.faceTouchR = localFaceTouchR
+
+		// Synthesize continuous sweeping Gentle Face Brush (16 seconds loop of 4-second sweeps with randomized panning)
+		let nFaceBrush = Int(sampleRate * 16.0)
+		var localFaceBrushL = [Float](repeating: 0, count: nFaceBrush)
+		var localFaceBrushR = [Float](repeating: 0, count: nFaceBrush)
+
+		let brushLowFilter = BiQuadFilter()
+		let brushHighFilter = BiQuadFilter()
+		brushLowFilter.setLowpass(frequency: 65.0, Q: 0.7, sampleRate: sampleRate)
+		brushHighFilter.setLowpass(frequency: 1200.0, Q: 0.5, sampleRate: sampleRate)
+
+		// Choose a random sequence of panned positions for each of the 4 sweeps
+		var randomBrushPans = [Float]()
+		for _ in 0..<4 {
+			randomBrushPans.append(possiblePans.randomElement()!)
+		}
+
+		for i in 0..<nFaceBrush {
+			let t = Double(i) / sampleRate
+			let sweepIndex = Int(t / 4.0)
+			let s = (t - Double(sweepIndex) * 4.0) / 4.0 // 0.0 to 1.0 within the sweep
 			let tPress = s * 4.0
 
-			// Raised sine/cosine volume envelope for slow touch-and-release
+			// Raised sine/cosine volume envelope for slow sweep touch-and-release
 			var env: Double = 0.0
 			if tPress < 1.2 {
 				env = pow(sin((Double.pi / 2.0) * tPress / 1.2), 2)
@@ -2074,75 +2140,17 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				env = 0.0
 			}
 
-			// Panning position chosen randomly
-			let p = randomPans[pressIndex % 8]
+			// Panning position chosen randomly per sweep
+			let p = randomBrushPans[sweepIndex % 4]
 
 			// Organic hand micro-tremor (6Hz amplitude tremolo)
 			let tremor = 0.88 + 0.12 * sin(2.0 * Double.pi * 6.0 * t)
 			let noiseVal = gaussianRandom()
 			
-			// Extract low-frequency warm rumble (no high-frequency friction at all)
-			let rumble = lowRumbleFilter.process(Double(noiseVal))
-			let monoSample = Float(rumble * 2.2 * env * tremor * 0.45)
-
-			// Stereo Pan
-			let absP = abs(p)
-			let bleedToL = p < 0 ? absP : 0.0
-			let bleedToR = p > 0 ? p : 0.0
-			let keepL = p > 0 ? 1.0 - p : 1.0
-			let keepR = p < 0 ? 1.0 - absP : 1.0
-			let norm = 1.0 + absP
-
-			var outL = (monoSample * keepL + monoSample * bleedToL) / norm
-			var outR = (monoSample * keepR + monoSample * bleedToR) / norm
-
-			// Intimate Proximity spatialization
-			let closerEarBoost = 1.0 + absP * 0.45
-			let oppositeEarReduction = pow(1.0 - absP, 1.6)
-			if p > 0 {
-				outR *= closerEarBoost
-				outL *= oppositeEarReduction
-			} else if p < 0 {
-				outL *= closerEarBoost
-				outR *= oppositeEarReduction
-			}
-
-			localFaceTouchL[i] = outL
-			localFaceTouchR[i] = outR
-		}
-		self.faceTouchL = localFaceTouchL
-		self.faceTouchR = localFaceTouchR
-
-		// Synthesize continuous sweeping Gentle Face Brush strokes (8 seconds loop)
-		let nFaceBrush = Int(sampleRate * 8.0)
-		var localFaceBrushL = [Float](repeating: 0, count: nFaceBrush)
-		var localFaceBrushR = [Float](repeating: 0, count: nFaceBrush)
-
-		let brushFilter = BiQuadFilter()
-
-		for i in 0..<nFaceBrush {
-			let t = Double(i) / sampleRate
-			let strokeIndex = Int(t / 4.0)
-			let s = (t - Double(strokeIndex) * 4.0) / 4.0 // 0.0 to 1.0 within the stroke
-
-			// Brushing volume envelope: smooth rise and fall
-			let env = sin(s * Double.pi)
-
-			// Sweeping bandpass filter center frequency: 450Hz to 1250Hz
-			let fc = 450.0 + 800.0 * sin(s * Double.pi)
-			brushFilter.setBandpass(frequency: fc, Q: 0.8, sampleRate: sampleRate)
-
-			let noiseVal = gaussianRandom()
-			let filtered = brushFilter.process(Double(noiseVal))
-			let monoSample = Float(filtered * env * 0.4)
-
-			// Panning: Stroke 0 (Left to Right), Stroke 1 (Right to Left)
-			let p: Float
-			if strokeIndex == 0 {
-				p = -0.85 + 1.7 * Float(s) // Left to Right
-			} else {
-				p = 0.85 - 1.7 * Float(s)  // Right to Left
-			}
+			// Exact soft touch implementation (low-frequency warm rumble + ultra-soft high-frequency contact friction)
+			let rumble = brushLowFilter.process(Double(noiseVal))
+			let friction = brushHighFilter.process(Double(noiseVal))
+			let monoSample = Float((rumble * 1.5 + friction * 0.015) * env * tremor * 0.25)
 
 			// Stereo Pan
 			let absP = abs(p)
