@@ -467,12 +467,12 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 		proximityEqNode.bands[0].filterType = .lowShelf
 		proximityEqNode.bands[0].frequency = 220.0
-		proximityEqNode.bands[0].gain = 11.0
+		proximityEqNode.bands[0].gain = 16.0
 		proximityEqNode.bands[0].bypass = false
 
 		proximityEqNode.bands[1].filterType = .highShelf
 		proximityEqNode.bands[1].frequency = 4800.0
-		proximityEqNode.bands[1].gain = 7.5
+		proximityEqNode.bands[1].gain = 10.5
 		proximityEqNode.bands[1].bypass = false
 
 		proximityEqNode.bypass = !self.enableIntimateMode
@@ -1874,8 +1874,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 		if intimate {
 			let absPos = abs(pos)
-			let closerEarBoost = Float(1.0 + absPos * 0.45)
-			let oppositeEarReduction = Float(pow(Double(1.0 - absPos), 1.6))
+			let closerEarBoost = Float(1.0 + absPos * 0.85)
+			let oppositeEarReduction = Float(pow(Double(1.0 - absPos), 3.5))
 			
 			if pos > 0 {
 				outR *= closerEarBoost
@@ -2083,8 +2083,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			var outR = (monoSample * keepR + monoSample * bleedToR) / norm
 
 			// Intimate Proximity spatialization
-			let closerEarBoost = 1.0 + absP * 0.45
-			let oppositeEarReduction = pow(1.0 - absP, 1.6)
+			let closerEarBoost = 1.0 + absP * 0.85
+			let oppositeEarReduction = pow(1.0 - absP, 3.5)
 			if p > 0 {
 				outR *= closerEarBoost
 				outL *= oppositeEarReduction
