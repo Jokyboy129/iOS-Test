@@ -161,9 +161,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	let anchorNode = AVAudioPlayerNode()
 	let meditationPlayerNode = AVAudioPlayerNode()
 
-	var rainPlayer: AVAudioPlayer?
-	var organicHeartbeatPlayer: AVAudioPlayer?
+	var rainPlayerNode: AVAudioPlayerNode?
+	var rainAudioFile: AVAudioFile?
+	var organicHeartbeatPlayerNode: AVAudioPlayerNode?
+	var organicHeartbeatAudioFile: AVAudioFile?
 	var alarmPlayer: AVAudioPlayer?
+	var exporterAlarmNode: AVAudioPlayerNode?
+	var exporterAlarmFile: AVAudioFile?
 	var silentBackgroundPlayer: AVAudioPlayer?
 	var meditationItems: [MeditationItem] = []
 
@@ -388,7 +392,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 	@Published var currentBreathingPhase: String = String(localized: "Ready")
 
-	override init() {
+	let isExporter: Bool
+
+	init(isExporter: Bool = false) {
+		self.isExporter = isExporter
 		super.init()
 
 		let ud = UserDefaults.standard
@@ -478,7 +485,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		proximityEqNode.bypass = !self.enableIntimateMode
 
 		syncRenderState()
-		applyAudioSessionSettings()
+		if !isExporter {
+			applyAudioSessionSettings()
+		}
 		setupOrganicPlayers()
 
 		realInhaleBuffer = loadWAV(filename: "REAL_INHALE")
@@ -491,14 +500,16 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		loadTracks()
 		loadMeditationTracks()
 		loadAlarmPlayer()
-		setupMediaControls()
-		setupObservers()
-		setupCoreHaptics()
+		updateProximityEQ()
 		resetDynamicBPM()
 		rebuildPrototypes()
 		updateVolumes()
-		updateProximityEQ()
-		startTimersMonitor()
+		if !isExporter {
+			setupMediaControls()
+			setupObservers()
+			setupCoreHaptics()
+			startTimersMonitor()
+		}
 	}
 
 	private func save(_ key: String, _ value: Any) {
@@ -619,6 +630,69 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		} catch {}
 	}
 
+	func exportSoundscape(durationHours: Double, progress: @escaping (Double) -> Void, completion: @escaping (URL?) -> Void) {
+		DispatchQueue.global(qos: .userInitiated).async {
+			let exporter = AudioEngineManager(isExporter: true)
+			exporter.isPlaying = true
+			exporter.updateVolumes()
+			
+			if !exporter.alarmIsAppleMusic && !exporter.alarmPath.isEmpty {
+				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+				let url = docs.appendingPathComponent(exporter.alarmPath)
+				if let af = try? AVAudioFile(forReading: url) {
+					let node = AVAudioPlayerNode()
+					exporter.engine.attach(node)
+					exporter.engine.connect(node, to: exporter.engine.mainMixerNode, format: af.processingFormat)
+					exporter.exporterAlarmNode = node
+					exporter.exporterAlarmFile = af
+				}
+			}
+
+			let format = AVAudioFormat(standardFormatWithSampleRate: exporter.sampleRate, channels: 2)!
+			let maxFrames: AVAudioFrameCount = 4096
+			do {
+				try exporter.engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: maxFrames)
+				try exporter.engine.start()
+				exporter.rainPlayerNode?.play()
+				exporter.organicHeartbeatPlayerNode?.play()
+				
+				let tempDir = FileManager.default.temporaryDirectory
+				let fileURL = tempDir.appendingPathComponent("SleepEngine_Export_\(UUID().uuidString).m4a")
+				
+				var settings = format.settings
+				settings[AVFormatIDKey] = kAudioFormatAppleLossless
+				let file = try AVAudioFile(forWriting: fileURL, settings: settings)
+				
+				let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: maxFrames)!
+				
+				let totalFrames = Int64(durationHours * 3600.0 * exporter.sampleRate)
+				var framesRendered: Int64 = 0
+				let simulatedStartDate = Date()
+				
+				while framesRendered < totalFrames {
+					let framesToRender = min(Int64(maxFrames), totalFrames - framesRendered)
+					let simulatedNow = simulatedStartDate.addingTimeInterval(Double(framesRendered) / exporter.sampleRate)
+					exporter.checkTimers(now: simulatedNow)
+					
+					let status = try exporter.engine.renderOffline(AVAudioFrameCount(framesToRender), to: buffer)
+					if status == .success {
+						try file.write(from: buffer)
+						framesRendered += framesToRender
+						let currentProgress = Double(framesRendered) / Double(totalFrames)
+						DispatchQueue.main.async { progress(currentProgress) }
+					} else if status == .error {
+						break
+					}
+				}
+				
+				exporter.engine.stop()
+				DispatchQueue.main.async { completion(fileURL) }
+			} catch {
+				DispatchQueue.main.async { completion(nil) }
+			}
+		}
+	}
+
 	private func applyAudioSessionSettings() {
 		do {
 			let session = AVAudioSession.sharedInstance()
@@ -733,10 +807,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		engine.mainMixerNode.outputVolume = Float(masterVolume)
 
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
-		rainPlayer?.volume = targetRainVol
+		rainPlayerNode?.volume = targetRainVol
 
 		let targetOrgVol = Float(organicHeartbeatVolume * masterVolume) * soundscapeMultiplier
-		organicHeartbeatPlayer?.volume = targetOrgVol
+		organicHeartbeatPlayerNode?.volume = targetOrgVol
 
 		importedMixer.outputVolume = 1.0
 
@@ -752,6 +826,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 
 		alarmPlayer?.volume = Float(alarmVolume * masterVolume * alarmFadeMultiplier)
+		exporterAlarmNode?.volume = Float(alarmVolume * masterVolume * alarmFadeMultiplier)
 
 		syncRenderState()
 	}
@@ -794,8 +869,26 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	}
 
 	private func setupOrganicPlayers() {
-		rainPlayer = loadPlayer(filename: "RAIN")
-		organicHeartbeatPlayer = loadPlayer(filename: "HEARTBEAT")
+		if let url = Bundle.main.url(forResource: "RAIN", withExtension: "wav"),
+		   let file = try? AVAudioFile(forReading: url) {
+			rainAudioFile = file
+			rainPlayerNode = AVAudioPlayerNode()
+		}
+		
+		if let url = Bundle.main.url(forResource: "HEARTBEAT", withExtension: "wav"),
+		   let file = try? AVAudioFile(forReading: url) {
+			organicHeartbeatAudioFile = file
+			organicHeartbeatPlayerNode = AVAudioPlayerNode()
+		}
+	}
+	
+	private func scheduleLoop(node: AVAudioPlayerNode?, file: AVAudioFile?) {
+		guard let node = node, let file = file else { return }
+		node.scheduleFile(file, at: nil) { [weak self] in
+			DispatchQueue.main.async {
+				self?.scheduleLoop(node: node, file: file)
+			}
+		}
 	}
 
 	func reloadImportedTracksRouting() {
@@ -1168,8 +1261,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 	}
 
-	private func checkTimers() {
-		let now = Date()
+	func checkTimers(now: Date = Date()) {
 		updateMorningAlarm(now: now)
 
 		if isPlaying && isMeditationActive && !meditationItems.isEmpty {
@@ -1284,18 +1376,32 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	}
 
 	private func beginAlarmCrossfade() {
-		if alarmPlayer == nil { loadAlarmPlayer() }
-		alarmPlayer?.currentTime = 0
+		if isExporter {
+			if let node = exporterAlarmNode, let file = exporterAlarmFile {
+				node.volume = 0
+				node.scheduleFile(file, at: nil) { [weak self] in
+					DispatchQueue.main.async { self?.scheduleLoop(node: node, file: file) }
+				}
+				node.play()
+			}
+		} else {
+			if alarmPlayer == nil { loadAlarmPlayer() }
+			alarmPlayer?.currentTime = 0
+			alarmPlayer?.play()
+		}
 		alarmFadeMultiplier = 0.0
-		alarmPlayer?.play()
 		isAlarmRinging = true
 		morningAlarmPhase = .alarmCrossfade
 		updateNowPlaying(title: "Morning Alarm")
 	}
 
 	func stopAlarm() {
-		alarmPlayer?.stop()
-		alarmPlayer?.currentTime = 0
+		if isExporter {
+			exporterAlarmNode?.stop()
+		} else {
+			alarmPlayer?.stop()
+			alarmPlayer?.currentTime = 0
+		}
 		alarmFadeMultiplier = 0.0
 		morningFadeMultiplier = 1.0
 		isAlarmRinging = false
@@ -1322,8 +1428,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	func stopSoundscape(keepEngineAlive: Bool) {
 		headphoneRemovalFadeTimer?.invalidate()
 		headphoneRemovalFadeTimer = nil
-		rainPlayer?.pause()
-		organicHeartbeatPlayer?.pause()
+		rainPlayerNode?.pause()
+		organicHeartbeatPlayerNode?.pause()
 		for track in importedTracks { track.pause() }
 		meditationItems.forEach { $0.avPlayer?.pause() }
 		meditationPlayerNode.pause()
@@ -1829,8 +1935,18 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.attach(proximityEqNode)
 			engine.attach(hspEqNode)
 
+			if let rn = rainPlayerNode { engine.attach(rn) }
+			if let hn = organicHeartbeatPlayerNode { engine.attach(hn) }
+
 			engine.connect(node, to: preReverbMixer, format: format)
 			engine.connect(importedMixer, to: preReverbMixer, format: format)
+
+			if let rn = rainPlayerNode, let rf = rainAudioFile {
+				engine.connect(rn, to: postReverbMixer, format: rf.processingFormat)
+			}
+			if let hn = organicHeartbeatPlayerNode, let hf = organicHeartbeatAudioFile {
+				engine.connect(hn, to: postReverbMixer, format: hf.processingFormat)
+			}
 
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: postReverbMixer, format: format)
@@ -2189,8 +2305,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
 				guard let self = self else { return }
 				guard self.engine.isRunning else { return }
-				self.rainPlayer?.play()
-				self.organicHeartbeatPlayer?.play()
+				scheduleLoop(node: rainPlayerNode, file: rainAudioFile)
+				scheduleLoop(node: organicHeartbeatPlayerNode, file: organicHeartbeatAudioFile)
+				self.rainPlayerNode?.play()
+				self.organicHeartbeatPlayerNode?.play()
 				for track in self.importedTracks { track.play() }
 				if self.isMeditationActive && !self.meditationItems.isEmpty {
 					self.playMeditationTrack(at: self.currentMeditationIndex)
@@ -2242,8 +2360,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private func pauseForInterruption() {
 		wasPlayingBeforeInterruption = isPlaying
 		wasAlarmRingingBeforeInterruption = isAlarmRinging
-		rainPlayer?.pause()
-		organicHeartbeatPlayer?.pause()
+		rainPlayerNode?.pause()
+		organicHeartbeatPlayerNode?.pause()
 		for track in importedTracks { track.pause() }
 		meditationItems.forEach { $0.avPlayer?.pause() }
 		meditationPlayerNode.pause()
@@ -2258,8 +2376,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if !engine.isRunning {
 					try engine.start()
 				}
-				rainPlayer?.play()
-				organicHeartbeatPlayer?.play()
+				rainPlayerNode?.play()
+				organicHeartbeatPlayerNode?.play()
 				for track in importedTracks { track.play() }
 				if isMeditationActive && !meditationItems.isEmpty {
 					playMeditationTrack(at: currentMeditationIndex)
@@ -2314,8 +2432,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if !engine.isRunning {
 					try engine.start()
 				}
-				rainPlayer?.play()
-				organicHeartbeatPlayer?.play()
+				rainPlayerNode?.play()
+				organicHeartbeatPlayerNode?.play()
 				for track in importedTracks { track.play() }
 				if isMeditationActive && !meditationItems.isEmpty {
 					playMeditationTrack(at: currentMeditationIndex)
@@ -2369,8 +2487,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			if self.isPlaying {
 				do {
 					try self.engine.start()
-					self.rainPlayer?.play()
-					self.organicHeartbeatPlayer?.play()
+					self.rainPlayerNode?.play()
+					self.organicHeartbeatPlayerNode?.play()
 					for track in self.importedTracks { track.play() }
 					if self.isMeditationActive && !self.meditationItems.isEmpty {
 						self.playMeditationTrack(at: self.currentMeditationIndex)
@@ -2812,10 +2930,117 @@ struct SleepTimerView: View {
 	}
 }
 
+struct ShareSheet: UIViewControllerRepresentable {
+	var activityItems: [Any]
+	var applicationActivities: [UIActivity]? = nil
+
+	func makeUIViewController(context: Context) -> UIActivityViewController {
+		UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities)
+	}
+
+	func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+struct ExportView: View {
+	@ObservedObject var engine: AudioEngineManager
+	@Environment(\.presentationMode) var presentationMode
+	
+	@State private var exportType: Int = 0
+	@State private var customHours: Double = 1.0
+	@State private var isExporting: Bool = false
+	@State private var exportProgress: Double = 0.0
+	@State private var exportedURL: URL? = nil
+	@State private var showShareSheet: Bool = false
+	
+	var body: some View {
+		NavigationView {
+			Form {
+				Section(header: Text("Export Options"), footer: Text("Exports the current soundscape configuration including rain, heartbeats, alarms, and reverb.")) {
+					Picker("Duration Type", selection: $exportType) {
+						Text("Custom Time").tag(0)
+						Text("Night with Alarm").tag(1)
+					}.pickerStyle(SegmentedPickerStyle())
+					
+					if exportType == 0 {
+						Stepper("Duration: \(customHours, specifier: "%.1f") hours", value: $customHours, in: 0.5...12.0, step: 0.5)
+					} else {
+						if engine.enableMorningAlarm {
+							Text("Will export until Morning Alarm fires.")
+								.foregroundColor(.secondary)
+						} else {
+							Text("Morning alarm is disabled. Enable it in the Alarm tab.")
+								.foregroundColor(.red)
+						}
+					}
+				}
+				
+				Section {
+					Button(action: startExport) {
+						if isExporting {
+							HStack {
+								Text("Exporting... \(Int(exportProgress * 100))%")
+								Spacer()
+								ProgressView()
+							}
+						} else {
+							Text("Export to .m4a (ALAC)")
+						}
+					}
+					.disabled(isExporting || (exportType == 1 && !engine.enableMorningAlarm))
+				}
+			}
+			.navigationTitle("Export Soundscape")
+			.navigationBarItems(trailing: Button("Done") { presentationMode.wrappedValue.dismiss() })
+			.sheet(isPresented: $showShareSheet) {
+				if let url = exportedURL {
+					ShareSheet(activityItems: [url])
+				}
+			}
+		}
+	}
+	
+	private func startExport() {
+		isExporting = true
+		exportProgress = 0.0
+		
+		var duration: Double = customHours
+		if exportType == 1 {
+			let now = Date()
+			let alarmDate = engine.morningAlarmDate
+			let calendar = Calendar.current
+			var nextAlarm = calendar.date(bySettingHour: calendar.component(.hour, from: alarmDate), minute: calendar.component(.minute, from: alarmDate), second: 0, of: now)!
+			if nextAlarm < now {
+				nextAlarm = calendar.date(byAdding: .day, value: 1, to: nextAlarm)!
+			}
+			duration = nextAlarm.timeIntervalSince(now) / 3600.0
+		}
+		
+		engine.exportSoundscape(durationHours: duration, progress: { p in
+			exportProgress = p
+		}) { url in
+			isExporting = false
+			if let url = url {
+				exportedURL = url
+				showShareSheet = true
+			}
+		}
+	}
+}
+
 struct SettingsView: View {
 	@ObservedObject var engine: AudioEngineManager
+	@State private var showExportSheet = false
 	var body: some View {
 		Form {
+			Section(header: Text("Export")) {
+				Button("Export Soundscape...") {
+					showExportSheet = true
+				}
+			}
+			.sheet(isPresented: $showExportSheet) {
+				ExportView(engine: engine)
+			}
+
 			Section(header: Text("Highly Sensitive Person (HSP) Features")) {
 				Toggle("HSP Acoustic Softening", isOn: $engine.enableHSPMode)
 					.accessibilityHint("Applies a global low-pass filter to muffle harsh high frequencies and soften the overall soundscape.")
