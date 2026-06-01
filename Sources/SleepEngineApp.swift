@@ -834,10 +834,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 	}
 
-	private func updateVolumes() {
 		let soundscapeMultiplier = Float(dynamicVolumeMultiplier * meditationFadeMultiplier * morningFadeMultiplier)
 
-		engine.mainMixerNode.outputVolume = Float(masterVolume)
+		engine.mainMixerNode.outputVolume = 1.0
 
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
@@ -950,7 +949,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						track.audioFile = file
 						engine.attach(pNode)
 						if isExporter && !importedAudioInReverb {
-							engine.connect(pNode, to: postReverbMixer, format: file.processingFormat)
+							engine.connect(pNode, to: engine.mainMixerNode, format: file.processingFormat)
 						} else {
 							engine.connect(pNode, to: importedMixer, format: file.processingFormat)
 						}
@@ -1162,7 +1161,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						track.audioFile = file
 						engine.attach(pNode)
 						if isExporter && !importedAudioInReverb {
-							engine.connect(pNode, to: postReverbMixer, format: file.processingFormat)
+							engine.connect(pNode, to: engine.mainMixerNode, format: file.processingFormat)
 						} else {
 							engine.connect(pNode, to: importedMixer, format: file.processingFormat)
 						}
