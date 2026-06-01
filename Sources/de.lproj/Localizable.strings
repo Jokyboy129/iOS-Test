@@ -178,3 +178,24 @@
 "Gentle Face Touch Volume" = "Sanfte Gesichtsberührung Lautstärke";
 "Gentle Face Brush" = "Sanftes Gesichtsbürsten";
 "Gentle Face Brush Volume" = "Sanftes Gesichtsbürsten Lautstärke";
+
+/* Export */
+"Export" = "Exportieren";
+"Export Soundscape..." = "Klanglandschaft exportieren...";
+"Export Soundscape" = "Klanglandschaft exportieren";
+"Export Options" = "Export-Optionen";
+"Exports the current soundscape configuration including rain, heartbeats, alarms, and reverb." = "Exportiert die aktuelle Klanglandschafts-Konfiguration inklusive Regen, Herzschlägen, Weckern und Hall.";
+"Duration Type" = "Dauer";
+"Custom Time" = "Eigene Zeit";
+"Night with Alarm" = "Nacht mit Wecker";
+"Duration: %.1f hours" = "Dauer: %.1f Stunden";
+"Simulated Bedtime" = "Simulierte Schlafenszeit";
+"Will export from this Bedtime until the Morning Alarm fires." = "Wird von dieser Schlafenszeit bis zum Klingeln des Weckers exportieren.";
+"Morning alarm is disabled. Enable it in the Alarm tab." = "Morgenwecker ist deaktiviert. Bitte im Wecker-Tab aktivieren.";
+"Audio Quality" = "Audioqualität";
+"High Quality (AAC 256 kbps)" = "Hohe Qualität (AAC 256 kbps)";
+"Lossless (ALAC)" = "Verlustfrei (ALAC)";
+"Exporting... %lld%%" = "Exportiere... %lld%%";
+"Export to .m4a (AAC)" = "Exportieren nach .m4a (AAC)";
+"Export to .m4a (ALAC)" = "Exportieren nach .m4a (ALAC)";
+"Done" = "Fertig";

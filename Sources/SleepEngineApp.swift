@@ -630,7 +630,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		} catch {}
 	}
 
-	func exportSoundscape(durationHours: Double, progress: @escaping (Double) -> Void, completion: @escaping (URL?) -> Void) {
+	func exportSoundscape(durationHours: Double, useAAC: Bool, simulatedStartDate: Date = Date(), progress: @escaping (Double) -> Void, completion: @escaping (URL?) -> Void) {
 		DispatchQueue.global(qos: .userInitiated).async {
 			let exporter = AudioEngineManager(isExporter: true)
 			exporter.isPlaying = true
@@ -649,7 +649,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			}
 
 			let format = AVAudioFormat(standardFormatWithSampleRate: exporter.sampleRate, channels: 2)!
-			let maxFrames: AVAudioFrameCount = 4096
+			let maxFrames: AVAudioFrameCount = 16384
 			do {
 				try exporter.engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: maxFrames)
 				try exporter.engine.start()
@@ -660,14 +660,19 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let fileURL = tempDir.appendingPathComponent("SleepEngine_Export_\(UUID().uuidString).m4a")
 				
 				var settings = format.settings
-				settings[AVFormatIDKey] = kAudioFormatAppleLossless
+				if useAAC {
+					settings[AVFormatIDKey] = kAudioFormatMPEG4AAC
+					settings[AVEncoderBitRateKey] = 256000
+				} else {
+					settings[AVFormatIDKey] = kAudioFormatAppleLossless
+				}
 				let file = try AVAudioFile(forWriting: fileURL, settings: settings)
 				
 				let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: maxFrames)!
 				
 				let totalFrames = Int64(durationHours * 3600.0 * exporter.sampleRate)
 				var framesRendered: Int64 = 0
-				let simulatedStartDate = Date()
+				var lastReportedPercent: Int = -1
 				
 				while framesRendered < totalFrames {
 					let framesToRender = min(Int64(maxFrames), totalFrames - framesRendered)
@@ -678,8 +683,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					if status == .success {
 						try file.write(from: buffer)
 						framesRendered += framesToRender
+						
 						let currentProgress = Double(framesRendered) / Double(totalFrames)
-						DispatchQueue.main.async { progress(currentProgress) }
+						let percent = Int(currentProgress * 100)
+						if percent > lastReportedPercent {
+							lastReportedPercent = percent
+							DispatchQueue.main.async { progress(currentProgress) }
+						}
 					} else if status == .error {
 						break
 					}
@@ -2947,6 +2957,8 @@ struct ExportView: View {
 	
 	@State private var exportType: Int = 0
 	@State private var customHours: Double = 1.0
+	@State private var simulatedBedtime: Date = Date()
+	@State private var audioFormat: Int = 1
 	@State private var isExporting: Bool = false
 	@State private var exportProgress: Double = 0.0
 	@State private var exportedURL: URL? = nil
@@ -2962,28 +2974,34 @@ struct ExportView: View {
 					}.pickerStyle(SegmentedPickerStyle())
 					
 					if exportType == 0 {
-						Stepper("Duration: \(customHours, specifier: "%.1f") hours", value: $customHours, in: 0.5...12.0, step: 0.5)
+						Stepper(String(localized: "Duration: \(customHours, specifier: "%.1f") hours"), value: $customHours, in: 0.5...12.0, step: 0.5)
 					} else {
 						if engine.enableMorningAlarm {
-							Text("Will export until Morning Alarm fires.")
+							DatePicker(String(localized: "Simulated Bedtime"), selection: $simulatedBedtime, displayedComponents: .hourAndMinute)
+							Text(String(localized: "Will export from this Bedtime until the Morning Alarm fires."))
 								.foregroundColor(.secondary)
 						} else {
-							Text("Morning alarm is disabled. Enable it in the Alarm tab.")
+							Text(String(localized: "Morning alarm is disabled. Enable it in the Alarm tab."))
 								.foregroundColor(.red)
 						}
 					}
+					
+					Picker(String(localized: "Audio Quality"), selection: $audioFormat) {
+						Text(String(localized: "High Quality (AAC 256 kbps)")).tag(1)
+						Text(String(localized: "Lossless (ALAC)")).tag(0)
+					}.pickerStyle(SegmentedPickerStyle())
 				}
 				
 				Section {
 					Button(action: startExport) {
 						if isExporting {
 							HStack {
-								Text("Exporting... \(Int(exportProgress * 100))%")
+								Text(String(localized: "Exporting... \(Int(exportProgress * 100))%"))
 								Spacer()
 								ProgressView()
 							}
 						} else {
-							Text("Export to .m4a (ALAC)")
+							Text(audioFormat == 1 ? String(localized: "Export to .m4a (AAC)") : String(localized: "Export to .m4a (ALAC)"))
 						}
 					}
 					.disabled(isExporting || (exportType == 1 && !engine.enableMorningAlarm))
@@ -3005,17 +3023,16 @@ struct ExportView: View {
 		
 		var duration: Double = customHours
 		if exportType == 1 {
-			let now = Date()
 			let alarmDate = engine.morningAlarmDate
 			let calendar = Calendar.current
-			var nextAlarm = calendar.date(bySettingHour: calendar.component(.hour, from: alarmDate), minute: calendar.component(.minute, from: alarmDate), second: 0, of: now)!
-			if nextAlarm < now {
+			var nextAlarm = calendar.date(bySettingHour: calendar.component(.hour, from: alarmDate), minute: calendar.component(.minute, from: alarmDate), second: 0, of: simulatedBedtime)!
+			if nextAlarm < simulatedBedtime {
 				nextAlarm = calendar.date(byAdding: .day, value: 1, to: nextAlarm)!
 			}
-			duration = nextAlarm.timeIntervalSince(now) / 3600.0
+			duration = nextAlarm.timeIntervalSince(simulatedBedtime) / 3600.0
 		}
 		
-		engine.exportSoundscape(durationHours: duration, progress: { p in
+		engine.exportSoundscape(durationHours: duration, useAAC: audioFormat == 1, simulatedStartDate: simulatedBedtime, progress: { p in
 			exportProgress = p
 		}) { url in
 			isExporting = false
