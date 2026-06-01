@@ -833,7 +833,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.connect(anchorNode, to: postReverbMixer, format: format)
 		}
 	}
-
+	private func updateVolumes() {
 		let soundscapeMultiplier = Float(dynamicVolumeMultiplier * meditationFadeMultiplier * morningFadeMultiplier)
 
 		engine.mainMixerNode.outputVolume = 1.0
