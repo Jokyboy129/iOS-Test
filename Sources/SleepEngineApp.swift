@@ -72,8 +72,10 @@ class ImportedTrack: Identifiable, ObservableObject {
 
 	func scheduleNextLoop() {
 		guard let pNode = enginePlayerNode, let file = audioFile else { return }
-		pNode.scheduleFile(file, at: nil, completionHandler: { [weak self] in
-			self?.scheduleNextLoop()
+		pNode.scheduleFile(file, at: nil, completionHandler: {
+			DispatchQueue.main.async { [weak self] in
+				self?.scheduleNextLoop()
+			}
 		})
 	}
 
@@ -652,18 +654,29 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				try exporter.engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: maxFrames)
 				try exporter.engine.start()
 				
-				exporter.scheduleLoop(node: exporter.rainPlayerNode, file: exporter.rainAudioFile)
-				exporter.scheduleLoop(node: exporter.rainPlayerNode, file: exporter.rainAudioFile)
-				exporter.rainPlayerNode?.play()
+				let durationInSeconds = durationHours * 3600.0
 				
-				exporter.scheduleLoop(node: exporter.organicHeartbeatPlayerNode, file: exporter.organicHeartbeatAudioFile)
-				exporter.scheduleLoop(node: exporter.organicHeartbeatPlayerNode, file: exporter.organicHeartbeatAudioFile)
-				exporter.organicHeartbeatPlayerNode?.play()
+				if let rNode = exporter.rainPlayerNode, let rFile = exporter.rainAudioFile {
+					let fileLength = Double(rFile.length) / rFile.fileFormat.sampleRate
+					let loops = Int(ceil(durationInSeconds / fileLength)) + 5
+					for _ in 0..<loops { rNode.scheduleFile(rFile, at: nil, completionHandler: nil) }
+					rNode.play()
+				}
+				
+				if let hNode = exporter.organicHeartbeatPlayerNode, let hFile = exporter.organicHeartbeatAudioFile {
+					let fileLength = Double(hFile.length) / hFile.fileFormat.sampleRate
+					let loops = Int(ceil(durationInSeconds / fileLength)) + 5
+					for _ in 0..<loops { hNode.scheduleFile(hFile, at: nil, completionHandler: nil) }
+					hNode.play()
+				}
 				
 				for track in exporter.importedTracks {
-					track.scheduleNextLoop()
-					track.scheduleNextLoop()
-					track.enginePlayerNode?.play()
+					if let tNode = track.enginePlayerNode, let tFile = track.audioFile {
+						let fileLength = Double(tFile.length) / tFile.fileFormat.sampleRate
+						let loops = Int(ceil(durationInSeconds / fileLength)) + 5
+						for _ in 0..<loops { tNode.scheduleFile(tFile, at: nil, completionHandler: nil) }
+						tNode.play()
+					}
 				}
 				
 				let tempDir = FileManager.default.temporaryDirectory
@@ -905,7 +918,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private func scheduleLoop(node: AVAudioPlayerNode?, file: AVAudioFile?) {
 		guard let node = node, let file = file else { return }
 		node.scheduleFile(file, at: nil) { [weak self] in
-			self?.scheduleLoop(node: node, file: file)
+			DispatchQueue.main.async {
+				self?.scheduleLoop(node: node, file: file)
+			}
 		}
 	}
 
@@ -1397,8 +1412,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		if isExporter {
 			if let node = exporterAlarmNode, let file = exporterAlarmFile {
 				node.volume = 0
-				node.scheduleFile(file, at: nil) { [weak self] in
-					self?.scheduleLoop(node: node, file: file)
+				for _ in 0..<50 {
+					node.scheduleFile(file, at: nil, completionHandler: nil)
 				}
 				node.play()
 			}
