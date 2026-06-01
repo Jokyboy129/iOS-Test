@@ -72,10 +72,8 @@ class ImportedTrack: Identifiable, ObservableObject {
 
 	func scheduleNextLoop() {
 		guard let pNode = enginePlayerNode, let file = audioFile else { return }
-		pNode.scheduleFile(file, at: nil, completionHandler: {
-			DispatchQueue.main.async { [weak self] in
-				self?.scheduleNextLoop()
-			}
+		pNode.scheduleFile(file, at: nil, completionHandler: { [weak self] in
+			self?.scheduleNextLoop()
 		})
 	}
 
@@ -653,8 +651,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			do {
 				try exporter.engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: maxFrames)
 				try exporter.engine.start()
+				
+				exporter.scheduleLoop(node: exporter.rainPlayerNode, file: exporter.rainAudioFile)
+				exporter.scheduleLoop(node: exporter.rainPlayerNode, file: exporter.rainAudioFile)
 				exporter.rainPlayerNode?.play()
+				
+				exporter.scheduleLoop(node: exporter.organicHeartbeatPlayerNode, file: exporter.organicHeartbeatAudioFile)
+				exporter.scheduleLoop(node: exporter.organicHeartbeatPlayerNode, file: exporter.organicHeartbeatAudioFile)
 				exporter.organicHeartbeatPlayerNode?.play()
+				
+				for track in exporter.importedTracks {
+					track.scheduleNextLoop()
+					track.scheduleNextLoop()
+					track.enginePlayerNode?.play()
+				}
 				
 				let tempDir = FileManager.default.temporaryDirectory
 				let fileURL = tempDir.appendingPathComponent("SleepEngine_Export_\(UUID().uuidString).m4a")
@@ -895,9 +905,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private func scheduleLoop(node: AVAudioPlayerNode?, file: AVAudioFile?) {
 		guard let node = node, let file = file else { return }
 		node.scheduleFile(file, at: nil) { [weak self] in
-			DispatchQueue.main.async {
-				self?.scheduleLoop(node: node, file: file)
-			}
+			self?.scheduleLoop(node: node, file: file)
 		}
 	}
 
@@ -1390,7 +1398,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			if let node = exporterAlarmNode, let file = exporterAlarmFile {
 				node.volume = 0
 				node.scheduleFile(file, at: nil) { [weak self] in
-					DispatchQueue.main.async { self?.scheduleLoop(node: node, file: file) }
+					self?.scheduleLoop(node: node, file: file)
 				}
 				node.play()
 			}
