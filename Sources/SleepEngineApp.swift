@@ -943,15 +943,21 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 				let url = docs.appendingPathComponent(track.path)
 
-				if importedAudioInReverb {
+				if isExporter || importedAudioInReverb {
 					let pNode = AVAudioPlayerNode()
 					track.enginePlayerNode = pNode
 					if let file = try? AVAudioFile(forReading: url) {
 						track.audioFile = file
 						engine.attach(pNode)
-						engine.connect(pNode, to: importedMixer, format: file.processingFormat)
-						track.scheduleNextLoop()
-						track.scheduleNextLoop()
+						if isExporter && !importedAudioInReverb {
+							engine.connect(pNode, to: postReverbMixer, format: file.processingFormat)
+						} else {
+							engine.connect(pNode, to: importedMixer, format: file.processingFormat)
+						}
+						if !isExporter {
+							track.scheduleNextLoop()
+							track.scheduleNextLoop()
+						}
 					}
 				} else {
 					track.avPlayer = try? AVAudioPlayer(contentsOf: url)
@@ -1149,15 +1155,21 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let url = docs.appendingPathComponent(data.path)
 				let track = ImportedTrack(id: data.id, name: data.name, volume: data.volume, isAppleMusic: false, path: data.path, delayAfterMeditation: data.delayAfterMeditation)
 
-				if importedAudioInReverb {
+				if isExporter || importedAudioInReverb {
 					let pNode = AVAudioPlayerNode()
 					track.enginePlayerNode = pNode
 					if let file = try? AVAudioFile(forReading: url) {
 						track.audioFile = file
 						engine.attach(pNode)
-						engine.connect(pNode, to: importedMixer, format: file.processingFormat)
-						track.scheduleNextLoop()
-						track.scheduleNextLoop()
+						if isExporter && !importedAudioInReverb {
+							engine.connect(pNode, to: postReverbMixer, format: file.processingFormat)
+						} else {
+							engine.connect(pNode, to: importedMixer, format: file.processingFormat)
+						}
+						if !isExporter {
+							track.scheduleNextLoop()
+							track.scheduleNextLoop()
+						}
 					}
 				} else {
 					track.avPlayer = try? AVAudioPlayer(contentsOf: url)
