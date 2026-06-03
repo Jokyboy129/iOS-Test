@@ -199,3 +199,184 @@
 "Export to .m4a (AAC)" = "Exportieren nach .m4a (AAC)";
 "Export to .m4a (ALAC)" = "Exportieren nach .m4a (ALAC)";
 "Done" = "Fertig";
+
+/* Recommendations & Personalization */
+"Anxious / Overthinking" = "Ängstlich / Grübelnd";
+"Stressed / High Pressure" = "Gestresst / Unter Druck";
+"Tired / Exhausted" = "Müde / Erschöpft";
+"Calm / Meditative" = "Ruhig / Meditativ";
+"Restless / ADHD" = "Rastlos / ADHS";
+"Deep Sleep" = "Tiefschlaf";
+"ASMR & Intimacy" = "ASMR & Intimität";
+"Calm & Grounding" = "Beruhigung & Erdung";
+"Focus & Study" = "Fokus & Lernen";
+"Stress Relief" = "Stressabbau";
+"Personalized Soundscape" = "Personalisierte Klanglandschaft";
+"Get Recommendations" = "Empfehlungen erhalten";
+"Select your personality and preference" = "Wähle deine Persönlichkeit und Vorliebe";
+"1. Select Your Personality / State" = "1. Wähle deine Persönlichkeit / Zustand";
+"Personality" = "Persönlichkeit";
+"2. Select Your Sleep/Focus Preference" = "2. Wähle deine Schlaf-/Fokusvorliebe";
+"Preference" = "Vorliebe";
+"Your Personalized Soundscape" = "Deine personalisierte Klanglandschaft";
+"Recommended Settings:" = "Empfohlene Einstellungen:";
+"• Tone Profile:" = "• Klangprofil:";
+"• Rain Volume:" = "• Regen-Lautstärke:";
+"• Brown Noise:" = "• Braunes Rauschen:";
+"• slow breathing:" = "• Langsame Atmung:";
+"• HSP Softening:" = "• HSP-Dämpfung:";
+"Applied Successfully!" = "Erfolgreich angewendet!";
+"Apply Recommended Settings" = "Empfohlene Einstellungen anwenden";
+"Suggested Sounds to Import" = "Vorgeschlagene Import-Klänge";
+"Enhance your soundscape by importing these sounds:" = "Erweitere deine Klanglandschaft mit diesen Klängen:";
+"Personalizer" = "Personalisierer";
+
+/* Recommendation Presets */
+"Womb Simulation Blanket" = "Gebärmutter-Simulationsdecke";
+"A heavy, low-frequency acoustic blanket designed to silence anxious racing thoughts and guide you into a secure sleep." = "Eine schwere, niederfrequente akustische Decke, die ängstliche, kreisende Gedanken beruhigen und dich in einen sicheren Schlaf führen soll.";
+"Heavy Waterfall" = "Schwerer Wasserfall";
+"Steady Airplane Cabin" = "Konstante Flugzeugkabine";
+"Adding a low rumble like a waterfall mask will drown out any sharp room noises and help stabilize sensory overload." = "Ein leises Grollen wie ein Wasserfall-Masker übertönt laute Raumgeräusche und stabilisiert sensorische Reize.";
+
+"Whispering Cradle" = "Flüsternde Wiege";
+"Designed to provide close, comforting vocal presence and soft ASMR friction to ease loneliness and anxiety." = "Entwickelt, um nahe, tröstende Stimmenpräsenz und sanfte ASMR-Reibung zu bieten, um Einsamkeit und Angst zu lindern.";
+"Page Turning" = "Seitenumblättern";
+"Hair Brushing" = "Haare bürsten";
+"Importing tactile textures enhances the physical feeling of presence, creating a deeply comforting ASMR bubble." = "Der Import taktiler Texturen verstärkt das physische Gefühl der Präsenz und schafft eine beruhigende ASMR-Blase.";
+
+"Somatic Breath Anchor" = "Somatischer Atemanker";
+"Uses clear, steady rhythmic breathing and warm heart pulses to bring your focus back to your body." = "Nutzt klare, stetige rhythmische Atmung und warme Herzimpulse, um deine Aufmerksamkeit zurück auf deinen Körper zu lenken.";
+"Tibetan Singing Bowl" = "Tibetische Klangschale";
+"Rain on Tent" = "Regen auf Zelt";
+"A singing bowl provides a resonant, long-decay frequency that acts as a perfect focal point for mindful grounding." = "Eine Klangschale bietet eine resonante Frequenz mit langem Ausklingen, die als perfekter Fokus für achtsame Erdung dient.";
+
+"Concentration Dome" = "Konzentrationskuppel";
+"Alpha brainwave frequencies and a regular rhythmic tick block anxious chatter, creating an optimal study space." = "Alpha-Gehirnwellenfrequenzen und ein regelmäßiges rhythmisches Ticken blockieren ängstliches Geplapper und schaffen einen optimalen Lernbereich.";
+"Library Rain" = "Bibliotheks-Regen";
+"Distant Train Tracks" = "Ferne Bahngleise";
+"The subtle clatter of a distant train provides an engaging, loop-like pattern that keeps the brain's background chatter occupied." = "Das subtile Klappern eines fernen Zuges bietet ein fesselndes, schleifenartiges Muster, das das Hintergrundgeplapper des Gehirns beschäftigt.";
+
+"Vaporous Rain Relief" = "Dunstige Regen-Linderung";
+"An acoustic refuge with heavy softening to melt away somatic tension and lower nervous system arousal." = "Ein akustischer Zufluchtsort mit starker Dämpfung, um körperliche Spannungen abzubauen und die Erregung des Nervensystems zu senken.";
+"Campfire Crackle" = "Lagerfeuer-Knistern";
+"Purring Cat" = "Schnurrende Katze";
+"Campfire crackles introduce organic high-frequency clicks that signal safety and cozyness to the anxious brain." = "Lagerfeuerknistern bringt organische hochfrequente Klicks ein, die dem ängstlichen Gehirn Sicherheit und Gemütlichkeit signalisieren.";
+
+"Overloaded Mind Decompression" = "Dekompressor für überlastete Köpfe";
+"Strong binaural entrainment and thick brown noise to wash away the cortisol and demands of a high-pressure day." = "Starkes binaurales Entrainment und dichtes braunes Rauschen, um das Cortisol und die Anforderungen eines stressigen Tages wegzuspülen.";
+"Whirring Fan" = "Surrender Ventilator";
+"Soft Brown Noise Drone" = "Sanfte Brummton-Spur (Braunes Rauschen)";
+"A steady mechanical fan sound provides a dense barrier of white-brown noise to prevent any stressful alerts from waking you." = "Ein stetiger mechanischer Ventilator bietet eine dichte Barriere aus weiß-braunem Rauschen, um zu verhindern, dass dich stressige Geräusche wecken.";
+
+"Solfeggio Soft Touch" = "Solfeggio Sanfte Berührung";
+"Slow, tactile face brushing and synchronized taptic heartbeats to ground you in deep bodily sensory pleasure." = "Langsames, taktiles Gesichtsbürsten und synchronisierte haptische Herzschläge, um dich in tiefem körperlichen Empfinden zu erden.";
+"Aura Cleansing Drone" = "Aura-Reinigungs-Brummton";
+"Gentle Wind Chimes" = "Sanfte Windspiele";
+"A rich synthesizer pad or drone introduces a harmonic layer that acts as a therapeutic sound bath." = "Ein sattes Synthesizer-Pad oder ein Brummton führt eine harmonische Ebene ein, die wie ein therapeutisches Klangbad wirkt.";
+
+"Quiet Forest Sanctuary" = "Ruhiges Waldschutzgebiet";
+"Slowing down your biological clock with a grandfather ticking and breathing cues matched to a relaxed resting state." = "Verlangsame deine biologische Uhr mit dem Ticken einer Standuhr und Atemhinweisen, die auf einen entspannten Ruhezustand abgestimmt sind.";
+"Forest Birds" = "Waldvögel";
+"Gentle Stream" = "Sanfter Bach";
+"The sounds of a forest stream encourage natural breathing pacing and lower stress levels immediately." = "Die Geräusche eines Waldbachs fördern eine natürliche Atembeschleunigung und senken sofort das Stressniveau.";
+
+"Flow State Generator" = "Flow-Zustand-Generator";
+"A focus-enhancing blend of theta brainwaves and rhythmic clicks to induce high productivity without stress." = "Eine fokussteigernde Mischung aus Theta-Gehirnwellen und rhythmischen Klicks für hohe Produktivität ohne Stress.";
+"Lo-Fi Beats" = "Lo-Fi Beats";
+"Cafe Ambiance" = "Café-Atmosphäre";
+"Lo-fi instrumental beats overlay perfectly with the generator to keep you in an uninterrupted flow state." = "Instrumentale Lo-Fi-Beats überlagern sich perfekt mit dem Generator, um dich im ungestörten Flow-Zustand zu halten.";
+
+"Cortisol Meltdown" = "Cortisol-Schmelze";
+"Combining slow-wave heartbeat, heavy rain, and vocal anchors to reset your nervous system from fight-or-flight." = "Kombiniert Tiefschlaf-Herzschlag, starken Regen und verbale Anker, um dein Nervensystem aus dem Kampf-oder-Flucht-Modus zurückzusetzen.";
+"Gentle Ocean Waves" = "Sanfte Meereswellen";
+"Tibetan Singing Bowls" = "Tibetische Klangschalen";
+"Ocean waves follow a natural breathing rhythm that will coax your lungs and mind into an organic state of relaxation." = "Meereswellen folgen einem natürlichen Atemrhythmus, der Lunge und Geist in einen organischen Entspannungszustand versetzt.";
+
+"Deep Sleep Dive" = "Tiefschlaf-Tauchgang";
+"For the utterly exhausted. Absolute room masking white noise combined with slow-wave sleep pulses for immediate blackout." = "Für die völlig Erschöpften. Absolute Raummaskierung mit weißem Rauschen kombiniert mit Tiefschlaf-Herzschlägen für sofortiges Einschlafen.";
+"Heavy Air Conditioner" = "Schwere Klimaanlage";
+"Pink Noise" = "Rosa Rauschen";
+"Heavy AC unit rumble acts as a powerful audio shield, ensuring you stay in deep, uninterrupted slow-wave sleep." = "Das schwere Grollen einer Klimaanlage dient als starker Audioschild und sorgt dafür, dass du im tiefen, ungestörten Schlaf bleibst.";
+
+"Somnolent Whispers" = "Einschlaf-Geflüster";
+"A very soft, slow heartbeat with whispering vocal guides to lull you to sleep when you are too tired to think." = "Ein sehr sanfter, langsamer Herzschlag mit geflüsterten Stimmen, die dich in den Schlaf wiegen, wenn du zu müde zum Denken bist.";
+"Soft Rain on Window" = "Sanfter Regen am Fenster";
+"Slow Keyboard Tapping" = "Langsames Tastaturtippen";
+"Soft rain on glass adds a delicate background texture that blends beautifully with the whispering and face brushing." = "Sanfter Regen auf Glas fügt eine zarte Hintergrundstruktur hinzu, die wunderbar mit dem Flüstern und Gesichtsbürsten harmoniert.";
+
+"Tired Heart Rest" = "Ermüdetes Herzrasen lindern";
+"A resting rhythm with a pocket watch tick to ground your weary mind and provide comfort as you drift away." = "Ein Ruherhythmus mit dem Ticken einer Taschenuhr, um deinen müden Geist zu erden und beim Einschlafen Trost zu spenden.";
+"Distant Wind Chimes" = "Ferne Windspiele";
+"A purring cat is proven to lower heart rate and blood pressure, acting as an exceptional acoustic pacifier." = "Eine schnurrende Katze senkt nachweislich die Herzfrequenz und den Blutdruck und wirkt wie ein hervorragender akustischer Schnuller.";
+
+"Recharge Station" = "Aufladestation";
+"When you are tired but must stay awake to finish a task. Beta-focused alpha waves to keep your tired mind alert." = "Wenn du müde bist, aber wach bleiben musst, um eine Aufgabe zu beenden. Beta-fokussierte Alpha-Wellen halten deinen müden Geist wach.";
+"Upbeat Lo-Fi" = "Belebendes Lo-Fi";
+"Coffee Shop White Noise" = "Kaffeehaus-Rauschen";
+"Bustling coffee shop noise provides high-frequency chatter that stimulates attention even when your body is fatigued." = "Lebhafter Kaffehauslärm bietet hochfrequentes Geplapper, das die Aufmerksamkeit anregt, selbst wenn dein Körper müde ist.";
+
+"Exhausted Recovery" = "Erschöpfungs-Erholung";
+"Restores reserves with heavy rain and a womb-like low heartbeat to repair a drained system." = "Stellt Energiereserven mit starkem Regen und einem gebärmutterähnlichen tiefen Herzschlag wieder her, um ein erschöpftes System zu reparieren.";
+"Summer Forest Rain" = "Sommerlicher Waldregen";
+"Cosmic Drone" = "Kosmischer Brummton";
+"A synthesized cosmic drone introduces low-frequency warmth that feels like a gentle vibrational massage for the mind." = "Ein synthetisierter kosmischer Brummton bringt tiefe Frequenzen ein, die sich wie eine sanfte Vibrationsmassage für den Geist anfühlen.";
+
+"Ethereal Sleep Resonance" = "Ätherische Schlafresonanz";
+"For the naturally calm. A minimalist, low-BPM pulse with delta brainwave induction for deep spiritual sleep." = "Für die von Natur aus Ruhigen. Ein minimalistischer Puls mit niedriger BPM und Delta-Gehirnwellen-Induktion für tiefen spirituellen Schlaf.";
+"Deep Ocean Drone" = "Tiefer Ozean-Brummton";
+"Submarine Sonar Ping" = "U-Boot Sonar-Ping";
+"An oceanic drone complements the ultra-slow cinematic pulse, expanding the spatial feel of your sleep sanctuary." = "Ein ozeanischer Brummton ergänzt den ultralangsamen filmischen Puls und erweitert das räumliche Gefühl deines Schlafzimmers.";
+
+"Gentle ASMR Drift" = "Sanftes ASMR-Treiben";
+"Very light, spacious ASMR brushing and breathing for a tranquil, floating bedtime experience." = "Sehr leichtes, weiträumiges ASMR-Bürsten und Atmen für ein ruhiges, schwebendes Einschlaferlebnis.";
+"Wind in Trees" = "Wind in den Bäumen";
+"Dry Leaves Rustling" = "Raschelndes trockenes Laub";
+"Ruffling dry leaves or wind rustling adds an organic high-frequency texture that heightens tactile ASMR sensitivity." = "Das Rascheln von trockenem Laub oder Wind bringt eine organische hochfrequente Textur ein, die die taktile ASMR-Empfindlichkeit erhöht.";
+
+"Zen Garden Oasis" = "Zen-Garten Oase";
+"The perfect companion for mindfulness. A rhythmic zen pulse and slow breathing synchronized to your heartbeat." = "Der perfekte Begleiter für Achtsamkeit. Ein rhythmischer Zen-Puls und eine langsame Atmung, die mit deinem Herzschlag synchronisiert sind.";
+"Dripping Water Fountain" = "Tröpfelnder Zimmerbrunnen";
+"Tibetan Bell" = "Tibetische Glocke";
+"A dripping fountain provides a naturally random, soothing click pattern that represents the flow of life." = "Ein tropfender Brunnen sorgt für ein natürlich zufälliges, beruhigendes Klickmuster, das den Fluss des Lebens darstellt.";
+
+"Deep Focus Sanctuary" = "Tiefes Fokus-Heiligtum";
+"A crisp pocket watch and high-concentration alpha waves for deep creative flow and mental clarity." = "Eine präzise Taschenuhr und hochkonzentrierte Alpha-Wellen für tiefen kreativen Fluss und geistige Klarheit.";
+"Focus Piano Chords" = "Fokus-Klavierakkorde";
+"Gentle Rain on Skylight" = "Sanfter Regen auf Dachfenster";
+"Gentle piano chords or ambient pads help stimulate creative thinking and keep your focus locked in." = "Sanfte Klavierakkorde oder Umgebungs-Pads regen das kreative Denken an und halten deinen Fokus fest.";
+
+"Tranquil Rain Sanctuary" = "Ruhiges Regenschutzgebiet";
+"Keeps your calm state protected with a gentle rain layer and soft somatic chest-wall heartbeats." = "Schützt deinen ruhigen Zustand mit einer sanften Regenschicht und weichen somatischen Herzschlägen.";
+"Wind Chimes in Breeze" = "Windspiele im Wind";
+"Warm Crackling Hearth" = "Kaminfeuer-Prasseln";
+"Wind chimes add melodic, non-periodic notes that capture the wandering mind and dissolve lingering stress." = "Windspiele fügen melodische, nicht-periodische Noten hinzu, die den wandernden Geist einfangen und verbleibenden Stress auflösen.";
+
+"Hyperactive Mind Grounding" = "Erdung für hyperaktive Köpfe";
+"Using complex rhythmic structures (synchronized clicks and ticking) to lock in the restless mind, combined with delta waves to force sleep." = "Verwendet komplexe rhythmische Strukturen (synchronisierte Klicks und Ticken), um den rastlosen Geist einzufangen, kombiniert mit Delta-Wellen, um das Einschlafen zu fördern.";
+"Static Fan Hum" = "Konstantes Ventilatorrauschen";
+"Rhythmic Trains" = "Rhythmische Züge";
+"A mechanical fan or trains offer a complex yet predictable acoustic framework that anchors a restless mind and prevents distraction." = "Ein mechanischer Ventilator oder Züge bieten einen komplexen, aber vorhersehbaren akustischen Rahmen, der einen unruhigen Geist verankert.";
+
+"ASMR Tactile Focus" = "Taktiler ASMR-Fokus";
+"High-frequency click tracks and intense face brushing that give the sensory-seeking brain rich, nearby stimulation." = "Hochfrequenz-Klicks und intensives Gesichtsbürsten, die dem sensorisch anspruchsvollen Gehirn reiche Stimulation in unmittelbarer Nähe bieten.";
+"Scratching Textures" = "Kratzende Texturen";
+"Tapping on Wood" = "Klopfen auf Holz";
+"Wood tapping or scratching introduces fast transients that satisfy the sensory-seeking mind, facilitating relaxation." = "Holzklopfen oder Kratzen erzeugt schnelle Transienten, die den Reizhunger des Geistes stillen und die Entspannung erleichtern.";
+
+"ADHD Somatic Pacer" = "Somatischer ADHD-Schrittmacher";
+"Using highly-defined heartbeat positions and structured clock ticks to physically pace and calm a hyperactive body." = "Verwendet klar definierte Herzschlag-Positionen und strukturierte Uhrenticker, um einen hyperaktiven Körper physisch zu beruhigen.";
+"Steady Pendulum" = "Konstantes Pendel";
+"Ocean Shoreline" = "Meeresufer";
+"A steady pendulum sound reinforces the Metronome, creating a powerful, hypnotizing physical rhythm that guides the body to rest." = "Ein gleichmäßiger Pendelton verstärkt das Metronom und erzeugt einen kraftvollen, hypnotisierenden physischen Rhythmus, der den Körper zur Ruhe führt.";
+
+"Hyperfocus Engine" = "Hyperfokus-Maschine";
+"Blocks out all external distractions with powerful white noise masking and high-frequency theta waves to trigger hyperfocus." = "Blendet alle äußeren Ablenkungen mit starker Maskierung durch weißes Rauschen und hochfrequenten Theta-Wellen aus, um Hyperfokus auszulösen.";
+"Brownian Noise" = "Braunes Rauschen";
+"Office Keyboard Chatter" = "Tastaturgeklapper im Büro";
+"Keyboard chatter or heavy brownian noise acts as a continuous wall of sound, masking sudden visual or audio distractions." = "Tastaturgeklapper oder schweres braunes Rauschen wirkt wie eine kontinuierliche Schallmauer, die plötzliche visuelle oder akustische Ablenkungen ausblendet.";
+
+"Rhythmic Rain Escape" = "Rhythmischer Regenausflug";
+"Captures a busy mind using a thick layer of organic rain combined with structured breathing holds to disrupt stress feedback loops." = "Fängt einen beschäftigten Geist mit einer dichten Schicht organischen Regens in Kombination mit strukturiertem Atemanhalten ein, um Stress-Rückkopplungsschleifen zu unterbrechen.";
+"Rain on Tin Roof" = "Regen auf Blechdach";
+"Binaural Rain Beats" = "Binaurale Regenschläge";
+"Rain on tin roof has complex, rich high-frequency dynamics that soothe the ADHD brain with pleasant white-like noise." = "Regen auf einem Blechdach hat komplexe, reichhaltige Hochfrequenz-Dynamiken, die das ADHS-Gehirn mit angenehmem, weißem Rauschen beruhigen.";

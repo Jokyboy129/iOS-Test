@@ -178,3 +178,184 @@
 "Gentle Face Touch Volume" = "Gentle Face Touch Volume";
 "Gentle Face Brush" = "Gentle Face Brush";
 "Gentle Face Brush Volume" = "Gentle Face Brush Volume";
+
+/* Recommendations & Personalization */
+"Anxious / Overthinking" = "Anxious / Overthinking";
+"Stressed / High Pressure" = "Stressed / High Pressure";
+"Tired / Exhausted" = "Tired / Exhausted";
+"Calm / Meditative" = "Calm / Meditative";
+"Restless / ADHD" = "Restless / ADHD";
+"Deep Sleep" = "Deep Sleep";
+"ASMR & Intimacy" = "ASMR & Intimacy";
+"Calm & Grounding" = "Calm & Grounding";
+"Focus & Study" = "Focus & Study";
+"Stress Relief" = "Stress Relief";
+"Personalized Soundscape" = "Personalized Soundscape";
+"Get Recommendations" = "Get Recommendations";
+"Select your personality and preference" = "Select your personality and preference";
+"1. Select Your Personality / State" = "1. Select Your Personality / State";
+"Personality" = "Personality";
+"2. Select Your Sleep/Focus Preference" = "2. Select Your Sleep/Focus Preference";
+"Preference" = "Preference";
+"Your Personalized Soundscape" = "Your Personalized Soundscape";
+"Recommended Settings:" = "Recommended Settings:";
+"• Tone Profile:" = "• Tone Profile:";
+"• Rain Volume:" = "• Rain Volume:";
+"• Brown Noise:" = "• Brown Noise:";
+"• slow breathing:" = "• slow breathing:";
+"• HSP Softening:" = "• HSP Softening:";
+"Applied Successfully!" = "Applied Successfully!";
+"Apply Recommended Settings" = "Apply Recommended Settings";
+"Suggested Sounds to Import" = "Suggested Sounds to Import";
+"Enhance your soundscape by importing these sounds:" = "Enhance your soundscape by importing these sounds:";
+"Personalizer" = "Personalizer";
+
+/* Recommendation Presets */
+"Womb Simulation Blanket" = "Womb Simulation Blanket";
+"A heavy, low-frequency acoustic blanket designed to silence anxious racing thoughts and guide you into a secure sleep." = "A heavy, low-frequency acoustic blanket designed to silence anxious racing thoughts and guide you into a secure sleep.";
+"Heavy Waterfall" = "Heavy Waterfall";
+"Steady Airplane Cabin" = "Steady Airplane Cabin";
+"Adding a low rumble like a waterfall mask will drown out any sharp room noises and help stabilize sensory overload." = "Adding a low rumble like a waterfall mask will drown out any sharp room noises and help stabilize sensory overload.";
+
+"Whispering Cradle" = "Whispering Cradle";
+"Designed to provide close, comforting vocal presence and soft ASMR friction to ease loneliness and anxiety." = "Designed to provide close, comforting vocal presence and soft ASMR friction to ease loneliness and anxiety.";
+"Page Turning" = "Page Turning";
+"Hair Brushing" = "Hair Brushing";
+"Importing tactile textures enhances the physical feeling of presence, creating a deeply comforting ASMR bubble." = "Importing tactile textures enhances the physical feeling of presence, creating a deeply comforting ASMR bubble.";
+
+"Somatic Breath Anchor" = "Somatic Breath Anchor";
+"Uses clear, steady rhythmic breathing and warm heart pulses to bring your focus back to your body." = "Uses clear, steady rhythmic breathing and warm heart pulses to bring your focus back to your body.";
+"Tibetan Singing Bowl" = "Tibetan Singing Bowl";
+"Rain on Tent" = "Rain on Tent";
+"A singing bowl provides a resonant, long-decay frequency that acts as a perfect focal point for mindful grounding." = "A singing bowl provides a resonant, long-decay frequency that acts as a perfect focal point for mindful grounding.";
+
+"Concentration Dome" = "Concentration Dome";
+"Alpha brainwave frequencies and a regular rhythmic tick block anxious chatter, creating an optimal study space." = "Alpha brainwave frequencies and a regular rhythmic tick block anxious chatter, creating an optimal study space.";
+"Library Rain" = "Library Rain";
+"Distant Train Tracks" = "Distant Train Tracks";
+"The subtle clatter of a distant train provides an engaging, loop-like pattern that keeps the brain's background chatter occupied." = "The subtle clatter of a distant train provides an engaging, loop-like pattern that keeps the brain's background chatter occupied.";
+
+"Vaporous Rain Relief" = "Vaporous Rain Relief";
+"An acoustic refuge with heavy softening to melt away somatic tension and lower nervous system arousal." = "An acoustic refuge with heavy softening to melt away somatic tension and lower nervous system arousal.";
+"Campfire Crackle" = "Campfire Crackle";
+"Purring Cat" = "Purring Cat";
+"Campfire crackles introduce organic high-frequency clicks that signal safety and cozyness to the anxious brain." = "Campfire crackles introduce organic high-frequency clicks that signal safety and cozyness to the anxious brain.";
+
+"Overloaded Mind Decompression" = "Overloaded Mind Decompression";
+"Strong binaural entrainment and thick brown noise to wash away the cortisol and demands of a high-pressure day." = "Strong binaural entrainment and thick brown noise to wash away the cortisol and demands of a high-pressure day.";
+"Whirring Fan" = "Whirring Fan";
+"Soft Brown Noise Drone" = "Soft Brown Noise Drone";
+"A steady mechanical fan sound provides a dense barrier of white-brown noise to prevent any stressful alerts from waking you." = "A steady mechanical fan sound provides a dense barrier of white-brown noise to prevent any stressful alerts from waking you.";
+
+"Solfeggio Soft Touch" = "Solfeggio Soft Touch";
+"Slow, tactile face brushing and synchronized taptic heartbeats to ground you in deep bodily sensory pleasure." = "Slow, tactile face brushing and synchronized taptic heartbeats to ground you in deep bodily sensory pleasure.";
+"Aura Cleansing Drone" = "Aura Cleansing Drone";
+"Gentle Wind Chimes" = "Gentle Wind Chimes";
+"A rich synthesizer pad or drone introduces a harmonic layer that acts as a therapeutic sound bath." = "A rich synthesizer pad or drone introduces a harmonic layer that acts as a therapeutic sound bath.";
+
+"Quiet Forest Sanctuary" = "Quiet Forest Sanctuary";
+"Slowing down your biological clock with a grandfather ticking and breathing cues matched to a relaxed resting state." = "Slowing down your biological clock with a grandfather ticking and breathing cues matched to a relaxed resting state.";
+"Forest Birds" = "Forest Birds";
+"Gentle Stream" = "Gentle Stream";
+"The sounds of a forest stream encourage natural breathing pacing and lower stress levels immediately." = "The sounds of a forest stream encourage natural breathing pacing and lower stress levels immediately.";
+
+"Flow State Generator" = "Flow State Generator";
+"A focus-enhancing blend of theta brainwaves and rhythmic clicks to induce high productivity without stress." = "A focus-enhancing blend of theta brainwaves and rhythmic clicks to induce high productivity without stress.";
+"Lo-Fi Beats" = "Lo-Fi Beats";
+"Cafe Ambiance" = "Cafe Ambiance";
+"Lo-fi instrumental beats overlay perfectly with the generator to keep you in an uninterrupted flow state." = "Lo-fi instrumental beats overlay perfectly with the generator to keep you in an uninterrupted flow state.";
+
+"Cortisol Meltdown" = "Cortisol Meltdown";
+"Combining slow-wave heartbeat, heavy rain, and vocal anchors to reset your nervous system from fight-or-flight." = "Combining slow-wave heartbeat, heavy rain, and vocal anchors to reset your nervous system from fight-or-flight.";
+"Gentle Ocean Waves" = "Gentle Ocean Waves";
+"Tibetan Singing Bowls" = "Tibetan Singing Bowls";
+"Ocean waves follow a natural breathing rhythm that will coax your lungs and mind into an organic state of relaxation." = "Ocean waves follow a natural breathing rhythm that will coax your lungs and mind into an organic state of relaxation.";
+
+"Deep Sleep Dive" = "Deep Sleep Dive";
+"For the utterly exhausted. Absolute room masking white noise combined with slow-wave sleep pulses for immediate blackout." = "For the utterly exhausted. Absolute room masking white noise combined with slow-wave sleep pulses for immediate blackout.";
+"Heavy Air Conditioner" = "Heavy Air Conditioner";
+"Pink Noise" = "Pink Noise";
+"Heavy AC unit rumble acts as a powerful audio shield, ensuring you stay in deep, uninterrupted slow-wave sleep." = "Heavy AC unit rumble acts as a powerful audio shield, ensuring you stay in deep, uninterrupted slow-wave sleep.";
+
+"Somnolent Whispers" = "Somnolent Whispers";
+"A very soft, slow heartbeat with whispering vocal guides to lull you to sleep when you are too tired to think." = "A very soft, slow heartbeat with whispering vocal guides to lull you to sleep when you are too tired to think.";
+"Soft Rain on Window" = "Soft Rain on Window";
+"Slow Keyboard Tapping" = "Slow Keyboard Tapping";
+"Soft rain on glass adds a delicate background texture that blends beautifully with the whispering and face brushing." = "Soft rain on glass adds a delicate background texture that blends beautifully with the whispering and face brushing.";
+
+"Tired Heart Rest" = "Tired Heart Rest";
+"A resting rhythm with a pocket watch tick to ground your weary mind and provide comfort as you drift away." = "A resting rhythm with a pocket watch tick to ground your weary mind and provide comfort as you drift away.";
+"Distant Wind Chimes" = "Distant Wind Chimes";
+"A purring cat is proven to lower heart rate and blood pressure, acting as an exceptional acoustic pacifier." = "A purring cat is proven to lower heart rate and blood pressure, acting as an exceptional acoustic pacifier.";
+
+"Recharge Station" = "Recharge Station";
+"When you are tired but must stay awake to finish a task. Beta-focused alpha waves to keep your tired mind alert." = "When you are tired but must stay awake to finish a task. Beta-focused alpha waves to keep your tired mind alert.";
+"Upbeat Lo-Fi" = "Upbeat Lo-Fi";
+"Coffee Shop White Noise" = "Coffee Shop White Noise";
+"Bustling coffee shop noise provides high-frequency chatter that stimulates attention even when your body is fatigued." = "Bustling coffee shop noise provides high-frequency chatter that stimulates attention even when your body is fatigued.";
+
+"Exhausted Recovery" = "Exhausted Recovery";
+"Restores reserves with heavy rain and a womb-like low heartbeat to repair a drained system." = "Restores reserves with heavy rain and a womb-like low heartbeat to repair a drained system.";
+"Summer Forest Rain" = "Summer Forest Rain";
+"Cosmic Drone" = "Cosmic Drone";
+"A synthesized cosmic drone introduces low-frequency warmth that feels like a gentle vibrational massage for the mind." = "A synthesized cosmic drone introduces low-frequency warmth that feels like a gentle vibrational massage for the mind.";
+
+"Ethereal Sleep Resonance" = "Ethereal Sleep Resonance";
+"For the naturally calm. A minimalist, low-BPM pulse with delta brainwave induction for deep spiritual sleep." = "For the naturally calm. A minimalist, low-BPM pulse with delta brainwave induction for deep spiritual sleep.";
+"Deep Ocean Drone" = "Deep Ocean Drone";
+"Submarine Sonar Ping" = "Submarine Sonar Ping";
+"An oceanic drone complements the ultra-slow cinematic pulse, expanding the spatial feel of your sleep sanctuary." = "An oceanic drone complements the ultra-slow cinematic pulse, expanding the spatial feel of your sleep sanctuary.";
+
+"Gentle ASMR Drift" = "Gentle ASMR Drift";
+"Very light, spacious ASMR brushing and breathing for a tranquil, floating bedtime experience." = "Very light, spacious ASMR brushing and breathing for a tranquil, floating bedtime experience.";
+"Wind in Trees" = "Wind in Trees";
+"Dry Leaves Rustling" = "Dry Leaves Rustling";
+"Ruffling dry leaves or wind rustling adds an organic high-frequency texture that heightens tactile ASMR sensitivity." = "Ruffling dry leaves or wind rustling adds an organic high-frequency texture that heightens tactile ASMR sensitivity.";
+
+"Zen Garden Oasis" = "Zen Garden Oasis";
+"The perfect companion for mindfulness. A rhythmic zen pulse and slow breathing synchronized to your heartbeat." = "The perfect companion for mindfulness. A rhythmic zen pulse and slow breathing synchronized to your heartbeat.";
+"Dripping Water Fountain" = "Dripping Water Fountain";
+"Tibetan Bell" = "Tibetan Bell";
+"A dripping fountain provides a naturally random, soothing click pattern that represents the flow of life." = "A dripping fountain provides a naturally random, soothing click pattern that represents the flow of life.";
+
+"Deep Focus Sanctuary" = "Deep Focus Sanctuary";
+"A crisp pocket watch and high-concentration alpha waves for deep creative flow and mental clarity." = "A crisp pocket watch and high-concentration alpha waves for deep creative flow and mental clarity.";
+"Focus Piano Chords" = "Focus Piano Chords";
+"Gentle Rain on Skylight" = "Gentle Rain on Skylight";
+"Gentle piano chords or ambient pads help stimulate creative thinking and keep your focus locked in." = "Gentle piano chords or ambient pads help stimulate creative thinking and keep your focus locked in.";
+
+"Tranquil Rain Sanctuary" = "Tranquil Rain Sanctuary";
+"Keeps your calm state protected with a gentle rain layer and soft somatic chest-wall heartbeats." = "Keeps your calm state protected with a gentle rain layer and soft somatic chest-wall heartbeats.";
+"Wind Chimes in Breeze" = "Wind Chimes in Breeze";
+"Warm Crackling Hearth" = "Warm Crackling Hearth";
+"Wind chimes add melodic, non-periodic notes that capture the wandering mind and dissolve lingering stress." = "Wind chimes add melodic, non-periodic notes that capture the wandering mind and dissolve lingering stress.";
+
+"Hyperactive Mind Grounding" = "Hyperactive Mind Grounding";
+"Using complex rhythmic structures (synchronized clicks and ticking) to lock in the restless mind, combined with delta waves to force sleep." = "Using complex rhythmic structures (synchronized clicks and ticking) to lock in the restless mind, combined with delta waves to force sleep.";
+"Static Fan Hum" = "Static Fan Hum";
+"Rhythmic Trains" = "Rhythmic Trains";
+"A mechanical fan or trains offer a complex yet predictable acoustic framework that anchors a restless mind and prevents distraction." = "A mechanical fan or trains offer a complex yet predictable acoustic framework that anchors a restless mind and prevents distraction.";
+
+"ASMR Tactile Focus" = "ASMR Tactile Focus";
+"High-frequency click tracks and intense face brushing that give the sensory-seeking brain rich, nearby stimulation." = "High-frequency click tracks and intense face brushing that give the sensory-seeking brain rich, nearby stimulation.";
+"Scratching Textures" = "Scratching Textures";
+"Tapping on Wood" = "Tapping on Wood";
+"Wood tapping or scratching introduces fast transients that satisfy the sensory-seeking mind, facilitating relaxation." = "Wood tapping or scratching introduces fast transients that satisfy the sensory-seeking mind, facilitating relaxation.";
+
+"ADHD Somatic Pacer" = "ADHD Somatic Pacer";
+"Using highly-defined heartbeat positions and structured clock ticks to physically pace and calm a hyperactive body." = "Using highly-defined heartbeat positions and structured clock ticks to physically pace and calm a hyperactive body.";
+"Steady Pendulum" = "Steady Pendulum";
+"Ocean Shoreline" = "Ocean Shoreline";
+"A steady pendulum sound reinforces the Metronome, creating a powerful, hypnotizing physical rhythm that guides the body to rest." = "A steady pendulum sound reinforces the Metronome, creating a powerful, hypnotizing physical rhythm that guides the body to rest.";
+
+"Hyperfocus Engine" = "Hyperfocus Engine";
+"Blocks out all external distractions with powerful white noise masking and high-frequency theta waves to trigger hyperfocus." = "Blocks out all external distractions with powerful white noise masking and high-frequency theta waves to trigger hyperfocus.";
+"Brownian Noise" = "Brownian Noise";
+"Office Keyboard Chatter" = "Office Keyboard Chatter";
+"Keyboard chatter or heavy brownian noise acts as a continuous wall of sound, masking sudden visual or audio distractions." = "Keyboard chatter or heavy brownian noise acts as a continuous wall of sound, masking sudden visual or audio distractions.";
+
+"Rhythmic Rain Escape" = "Rhythmic Rain Escape";
+"Captures a busy mind using a thick layer of organic rain combined with structured breathing holds to disrupt stress feedback loops." = "Captures a busy mind using a thick layer of organic rain combined with structured breathing holds to disrupt stress feedback loops.";
+"Rain on Tin Roof" = "Rain on Tin Roof";
+"Binaural Rain Beats" = "Binaural Rain Beats";
+"Rain on tin roof has complex, rich high-frequency dynamics that soothe the ADHD brain with pleasant white-like noise." = "Rain on tin roof has complex, rich high-frequency dynamics that soothe the ADHD brain with pleasant white-like noise.";
