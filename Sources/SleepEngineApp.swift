@@ -1713,6 +1713,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				let beatDuration = 60.0 / actualBPM
+				let trueSubFreq = max(1.0, round(config.subFreq * beatDuration)) / beatDuration
 				let previousTBeat = self.tBeat
 				self.tBeat += dt
 
@@ -1765,7 +1766,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
 					lEnv *= releaseCurve; slEnv *= releaseCurve
 				}
-				let subLub = sin(2 * Double.pi * config.subFreq * t) * slEnv * config.subVol
+				let subLub = sin(2 * Double.pi * trueSubFreq * t) * slEnv * config.subVol
 				let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
 				let lub = sin(lubPhase) * lEnv
 
@@ -1781,7 +1782,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						let releaseCurve = pow(cos((Double.pi / 2.0) * (t - (beatDuration - rel)) / rel), 2)
 						dEnv *= releaseCurve; sdEnv *= releaseCurve
 					}
-					subDub = sin(2 * Double.pi * config.subFreq * t) * sdEnv * config.subVol * 0.85
+					subDub = sin(2 * Double.pi * trueSubFreq * t) * sdEnv * config.subVol * 0.85
 					let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
 					dub = sin(dubPhase) * dEnv
 				}
@@ -3189,11 +3190,13 @@ struct SoundscapeRecommendation {
 	let syncBreathing: Bool
 	let enableHaptics: Bool
 	let enableEnhancedAnchors: Bool
+	let useWhisper: Bool
+	let useRealBreathing: Bool
 	let suggestedImports: [String]
 	let importReason: String
 }
 
-func getRecommendation(personality: Int, preference: Int) -> SoundscapeRecommendation {
+func getRecommendation(personality: Int, preference: Int, sensitivity: Int, intimacy: Int, environment: Int) -> SoundscapeRecommendation {
 	var name = ""
 	var rationale = ""
 	var profileIndex = 0
@@ -3222,6 +3225,8 @@ func getRecommendation(personality: Int, preference: Int) -> SoundscapeRecommend
 	var syncBreath = false
 	var haptics = false
 	var anchors = false
+	var whisper = false
+	var realBreath = false
 	var imports: [String] = []
 	var impReason = ""
 
@@ -3255,6 +3260,7 @@ func getRecommendation(personality: Int, preference: Int) -> SoundscapeRecommend
 		softClickVol = 0.40
 		intimate = true
 		anchors = true
+		whisper = true
 		haptics = true
 		imports = [String(localized: "Page Turning"), String(localized: "Hair Brushing")]
 		impReason = String(localized: "Importing tactile textures enhances the physical feeling of presence, creating a deeply comforting ASMR bubble.")
@@ -3380,6 +3386,7 @@ func getRecommendation(personality: Int, preference: Int) -> SoundscapeRecommend
 		faceBrushVol = 0.60
 		intimate = true
 		anchors = true
+		whisper = true
 		imports = [String(localized: "Soft Rain on Window"), String(localized: "Slow Keyboard Tapping")]
 		impReason = String(localized: "Soft rain on glass adds a delicate background texture that blends beautifully with the whispering and face brushing.")
 
@@ -3539,6 +3546,59 @@ func getRecommendation(personality: Int, preference: Int) -> SoundscapeRecommend
 		profileIndex = 1
 	}
 
+	// Dynamic Modifiers Based on 3 New Dimensions
+	
+	// 1. Sensitivity Modifiers
+	if sensitivity == 1 { // High (HSP)
+		hsp = true
+		whiteVol *= 0.5
+		clickVol = 0.0
+		softClickVol = 0.0
+		brownVol = max(brownVol, 0.4)
+	} else if sensitivity == 2 { // Sensory Seeking
+		hsp = false
+		clickVol = max(clickVol, 0.4)
+		softClickVol = max(softClickVol, 0.5)
+	}
+	
+	// 2. Intimacy Modifiers
+	if intimacy == 1 { // Crave Comforting Presence
+		realBreath = true
+		breathVol = max(breathVol, 0.6)
+	} else if intimacy == 2 { // ASMR Whispering
+		intimate = true
+		whisper = true
+		realBreath = false
+		anchors = true
+		faceBrushVol = max(faceBrushVol, 0.6)
+	}
+	
+	// 3. Environment Modifiers
+	if environment == 0 { // Rain & Storms
+		rainVol = max(rainVol, 0.6)
+	} else if environment == 1 { // Ocean & Water
+		brownVol = max(brownVol, 0.5)
+		rainVol *= 0.5
+		if !imports.contains(where: { $0.contains("Ocean") || $0.contains("Wave") }) {
+			imports.append(String(localized: "Ocean Waves"))
+		}
+	} else if environment == 2 { // Nature & Forest
+		rainVol = max(rainVol, 0.3)
+		if !imports.contains(where: { $0.contains("Bird") || $0.contains("Forest") }) {
+			imports.append(String(localized: "Forest Birds"))
+		}
+	} else if environment == 3 { // Mechanical & Urban
+		brownVol = max(brownVol, 0.6)
+		whiteVol = max(whiteVol, 0.3)
+		if !imports.contains(where: { $0.contains("Train") || $0.contains("Fan") }) {
+			imports.append(String(localized: "Distant Train"))
+		}
+	} else if environment == 4 { // Void & Abstract
+		rainVol = 0.0
+		binauralVol = max(binauralVol, 0.6)
+		orgHeartbeatVol = max(orgHeartbeatVol, 0.6)
+	}
+
 	return SoundscapeRecommendation(
 		name: name,
 		rationale: rationale,
@@ -3568,6 +3628,8 @@ func getRecommendation(personality: Int, preference: Int) -> SoundscapeRecommend
 		syncBreathing: syncBreath,
 		enableHaptics: haptics,
 		enableEnhancedAnchors: anchors,
+		useWhisper: whisper,
+		useRealBreathing: realBreath,
 		suggestedImports: imports,
 		importReason: impReason
 	)
@@ -3579,6 +3641,9 @@ struct RecommendationView: View {
 	
 	@State private var selectedPersonality = 0
 	@State private var selectedPreference = 0
+	@State private var selectedSensitivity = 0
+	@State private var selectedIntimacy = 0
+	@State private var selectedEnvironment = 0
 	@State private var showAppliedSuccess = false
 	
 	let personalities = [
@@ -3597,8 +3662,28 @@ struct RecommendationView: View {
 		String(localized: "Stress Relief")
 	]
 	
+	let sensitivities = [
+		String(localized: "Normal Sensitivity"),
+		String(localized: "High Sensitivity (HSP)"),
+		String(localized: "Sensory Seeking")
+	]
+	
+	let intimacies = [
+		String(localized: "Neutral Space"),
+		String(localized: "Crave Comforting Presence"),
+		String(localized: "ASMR Whispering")
+	]
+	
+	let environments = [
+		String(localized: "Rain & Storms"),
+		String(localized: "Ocean & Water"),
+		String(localized: "Nature & Forest"),
+		String(localized: "Mechanical & Urban"),
+		String(localized: "Void & Abstract")
+	]
+	
 	var recommendation: SoundscapeRecommendation {
-		getRecommendation(personality: selectedPersonality, preference: selectedPreference)
+		getRecommendation(personality: selectedPersonality, preference: selectedPreference, sensitivity: selectedSensitivity, intimacy: selectedIntimacy, environment: selectedEnvironment)
 	}
 	
 	var body: some View {
@@ -3622,6 +3707,36 @@ struct RecommendationView: View {
 					}
 					.pickerStyle(WheelPickerStyle())
 					.frame(height: 110)
+				}
+				
+				Section(header: Text("3. Sensitivity to Noise")) {
+					Picker("Sensitivity", selection: $selectedSensitivity) {
+						ForEach(0..<sensitivities.count, id: \.self) { index in
+							Text(sensitivities[index]).tag(index)
+						}
+					}
+					.pickerStyle(WheelPickerStyle())
+					.frame(height: 90)
+				}
+				
+				Section(header: Text("4. Intimacy & Presence")) {
+					Picker("Intimacy", selection: $selectedIntimacy) {
+						ForEach(0..<intimacies.count, id: \.self) { index in
+							Text(intimacies[index]).tag(index)
+						}
+					}
+					.pickerStyle(WheelPickerStyle())
+					.frame(height: 90)
+				}
+				
+				Section(header: Text("5. Atmospheric Environment")) {
+					Picker("Environment", selection: $selectedEnvironment) {
+						ForEach(0..<environments.count, id: \.self) { index in
+							Text(environments[index]).tag(index)
+						}
+					}
+					.pickerStyle(WheelPickerStyle())
+					.frame(height: 90)
 				}
 				
 				Section(header: Text("Your Personalized Soundscape")) {
@@ -3764,6 +3879,8 @@ struct RecommendationView: View {
 		engine.syncBreathing = rec.syncBreathing
 		engine.enableHaptics = rec.enableHaptics
 		engine.enableEnhancedAnchors = rec.enableEnhancedAnchors
+		engine.useWhisper = rec.useWhisper
+		engine.useRealBreathing = rec.useRealBreathing
 		
 		BeepGenerator.shared.playTabBeep()
 		
