@@ -131,6 +131,7 @@ struct AudioRenderState {
 	var soundscapeMultiplier: Float = 1.0
 	var isPlaying: Bool = false
 	var enableIntimateMode: Bool = false
+	var enableNaturalAcousticHeart: Bool = false
 }
 
 struct MeditationItem {
@@ -183,7 +184,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	var alarmFadeMultiplier: Double = 0.0 { didSet { updateVolumes() } }
 
 	let profiles: [HeartbeatProfile] = [
-		HeartbeatProfile(name: String(localized: "Natural Acoustic Heart (60 BPM)"), bpm: 60, lubBase: 45, lubDrop: 15, lubDecay: 20, dubBase: 55, dubDrop: 20, dubDecay: 25, dubDelay: 0.30, subFreq: 30, subVol: 0.20, subDecay: 5, whooshVol: 0.80, noiseLpf: 800),
 		HeartbeatProfile(name: String(localized: "ASMR Blood Flow (60 BPM)"), bpm: 60, lubBase: 40, lubDrop: 15, lubDecay: 18, dubBase: 50, dubDrop: 20, dubDecay: 22, dubDelay: 0.30, subFreq: 35, subVol: 0.25, subDecay: 6, whooshVol: 0.50, noiseLpf: 450),
 		HeartbeatProfile(name: String(localized: "Standard Resting Heart (72 BPM)"), bpm: 72, lubBase: 45, lubDrop: 10, lubDecay: 20, dubBase: 55, dubDrop: 15, dubDecay: 25, dubDelay: 0.28, subFreq: 30, subVol: 0.30, subDecay: 5, whooshVol: 0.30, noiseLpf: 500),
 		HeartbeatProfile(name: String(localized: "Womb Simulation (55 BPM)"), bpm: 55, lubBase: 55, lubDrop: 20, lubDecay: 20, dubBase: 70, dubDrop: 25, dubDecay: 25, dubDelay: 0.35, subFreq: 35, subVol: 0.45, subDecay: 5, whooshVol: 0.60, noiseLpf: 650),
@@ -439,6 +439,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 		self.enableHaptics = ud.bool(forKey: "enableHaptics")
 		self.enableEnhancedAnchors = ud.bool(forKey: "enableEnhancedAnchors")
+		self.enableNaturalAcousticHeart = ud.bool(forKey: "enableNaturalAcousticHeart")
 		self.enableIntimateMode = ud.bool(forKey: "enableIntimateMode")
 		self.reverbIndex = ud.integer(forKey: "reverbIndex")
 		self.voiceInReverb = ud.object(forKey: "voiceInReverb") == nil ? false : ud.bool(forKey: "voiceInReverb")
@@ -564,6 +565,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		newState.soundscapeMultiplier = Float(self.dynamicVolumeMultiplier * self.meditationFadeMultiplier * self.morningFadeMultiplier)
 		newState.isPlaying = self.isPlaying
 		newState.enableIntimateMode = self.enableIntimateMode
+		newState.enableNaturalAcousticHeart = self.enableNaturalAcousticHeart
 		self.renderState = newState
 	}
 
@@ -1780,7 +1782,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 				let subLub = sin(2 * Double.pi * trueSubFreq * t) * slEnv * config.subVol
 				let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
-				let lub = sin(lubPhase) * lEnv
+				var lub = sin(lubPhase) * lEnv
+				if state.enableNaturalAcousticHeart {
+					lub = (lub + sin(lubPhase * 3.5) * lEnv * 0.3 + sin(lubPhase * 7.0) * lEnv * 0.1) * 1.5
+				}
 
 				var dEnv = 0.0; var sdEnv = 0.0; var subDub = 0.0; var dub = 0.0
 				if t >= config.dubDelay {
@@ -1797,6 +1802,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					subDub = sin(2 * Double.pi * trueSubFreq * t) * sdEnv * config.subVol * 0.85
 					let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
 					dub = sin(dubPhase) * dEnv
+					if state.enableNaturalAcousticHeart {
+						dub = (dub + sin(dubPhase * 3.5) * dEnv * 0.3 + sin(dubPhase * 7.0) * dEnv * 0.1) * 1.5
+					}
 				}
 
 				let combinedLub = Float((lub + subLub) * 0.8); let combinedDub = Float((dub + subDub) * 0.8)
@@ -1832,7 +1840,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				let idxNoise = currentFrame % nNoise
-				let wVol = Float(config.whooshVol)
+				let wVol = state.enableNaturalAcousticHeart ? 0.0 : Float(config.whooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
 				let heartVolBoost: Float = state.enableIntimateMode ? 1.0 : 2.5
@@ -3145,6 +3153,8 @@ struct SettingsView: View {
 					.accessibilityHint("Uses the Taptic Engine to let you physically feel the heartbeat.")
 				Toggle("Enhanced Vocal Anchors", isOn: $engine.enableEnhancedAnchors)
 					.accessibilityHint("Spawns random spatial whispers around your head during breathing holds.")
+				Toggle("Natural Acoustic Heartbeats", isOn: $engine.enableNaturalAcousticHeart)
+					.accessibilityHint("Makes synth heartbeats very present with no background noise.")
 			}
 
 			Section(header: Text("Audio Behavior")) {
