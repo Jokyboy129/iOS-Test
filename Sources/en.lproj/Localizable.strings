@@ -178,4 +178,7 @@
 "Gentle Face Touch Volume" = "Gentle Face Touch Volume";
 "Gentle Face Brush" = "Gentle Face Brush";
 "Gentle Face Brush Volume" = "Gentle Face Brush Volume";
-
+
+/* Heartbeat Setting */
+"Natural Acoustic Heartbeats" = "Natural Acoustic Heartbeats";
+"Makes synth heartbeats very present with no background noise." = "Makes synth heartbeats very present with no background noise.";

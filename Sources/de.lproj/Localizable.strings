@@ -198,3 +198,7 @@
 "Exporting... %lld%%" = "Exportiere... %lld%%";
 "Export to .m4a (ALAC)" = "Exportieren nach .m4a (ALAC)";
 "Done" = "Fertig";
+
+/* Heartbeat Setting */
+"Natural Acoustic Heartbeats" = "Natürliche akustische Herzschläge";
+"Makes synth heartbeats very present with no background noise." = "Macht synthetische Herzschläge sehr präsent, ohne Hintergrundrauschen.";
