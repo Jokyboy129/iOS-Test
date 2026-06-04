@@ -1840,7 +1840,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				let idxNoise = currentFrame % nNoise
-				let wVol = state.enableNaturalAcousticHeart ? 0.0 : Float(config.whooshVol)
+				let wVol = state.enableNaturalAcousticHeart ? Float(0.0) : Float(config.whooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
 				let heartVolBoost: Float = state.enableIntimateMode ? 1.0 : 2.5
