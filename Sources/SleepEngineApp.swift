@@ -1785,7 +1785,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
 				var lub = sin(lubPhase) * lEnv
 				if state.enableNaturalAcousticHeart {
-					lub = (lub + sin(lubPhase * 3.5) * lEnv * 0.3 + sin(lubPhase * 7.0) * lEnv * 0.1) * 1.5
+					lub *= 2.5
+					lub = max(-1.0, min(1.0, lub))
 				}
 
 				var dEnv = 0.0; var sdEnv = 0.0; var subDub = 0.0; var dub = 0.0
@@ -1804,7 +1805,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					let dubPhase = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
 					dub = sin(dubPhase) * dEnv
 					if state.enableNaturalAcousticHeart {
-						dub = (dub + sin(dubPhase * 3.5) * dEnv * 0.3 + sin(dubPhase * 7.0) * dEnv * 0.1) * 1.5
+						dub *= 2.5
+						dub = max(-1.0, min(1.0, dub))
 					}
 				}
 
