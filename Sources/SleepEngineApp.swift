@@ -230,6 +230,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	@Published var selectedProfileIndex: Int = 0 { didSet { save("selectedProfileIndex", selectedProfileIndex); resetDynamicBPM(); rebuildPrototypes(); updateNowPlaying(); syncRenderState() } }
 	@Published var placementIndex: Int = 0 { didSet { save("placementIndex", placementIndex); rebuildPrototypes(); syncRenderState() } }
+	@Published var enableNaturalAcousticHeart: Bool = false { didSet { save("enableNaturalAcousticHeart", enableNaturalAcousticHeart); rebuildPrototypes(); syncRenderState() } }
 	@Published var masterVolume: Double = 1.0 { didSet { save("masterVolume", masterVolume); updateVolumes() } }
 
 	@Published var heartbeatVolume: Double = 0.0 { didSet { save("heartbeatVolume", heartbeatVolume); syncRenderState() } }
