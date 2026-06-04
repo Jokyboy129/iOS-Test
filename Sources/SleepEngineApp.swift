@@ -183,6 +183,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	var alarmFadeMultiplier: Double = 0.0 { didSet { updateVolumes() } }
 
 	let profiles: [HeartbeatProfile] = [
+		HeartbeatProfile(name: String(localized: "Natural Acoustic Heart (60 BPM)"), bpm: 60, lubBase: 45, lubDrop: 15, lubDecay: 20, dubBase: 55, dubDrop: 20, dubDecay: 25, dubDelay: 0.30, subFreq: 30, subVol: 0.20, subDecay: 5, whooshVol: 0.80, noiseLpf: 800),
 		HeartbeatProfile(name: String(localized: "ASMR Blood Flow (60 BPM)"), bpm: 60, lubBase: 40, lubDrop: 15, lubDecay: 18, dubBase: 50, dubDrop: 20, dubDecay: 22, dubDelay: 0.30, subFreq: 35, subVol: 0.25, subDecay: 6, whooshVol: 0.50, noiseLpf: 450),
 		HeartbeatProfile(name: String(localized: "Standard Resting Heart (72 BPM)"), bpm: 72, lubBase: 45, lubDrop: 10, lubDecay: 20, dubBase: 55, dubDrop: 15, dubDecay: 25, dubDelay: 0.28, subFreq: 30, subVol: 0.30, subDecay: 5, whooshVol: 0.30, noiseLpf: 500),
 		HeartbeatProfile(name: String(localized: "Womb Simulation (55 BPM)"), bpm: 55, lubBase: 55, lubDrop: 20, lubDecay: 20, dubBase: 70, dubDrop: 25, dubDecay: 25, dubDelay: 0.35, subFreq: 35, subVol: 0.45, subDecay: 5, whooshVol: 0.60, noiseLpf: 650),
@@ -509,6 +510,16 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			setupObservers()
 			setupCoreHaptics()
 			startTimersMonitor()
+			cleanupOldExportFiles()
+		}
+	}
+
+	private func cleanupOldExportFiles() {
+		let tempDir = FileManager.default.temporaryDirectory
+		if let urls = try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil) {
+			for url in urls where url.lastPathComponent.hasPrefix("SleepEngine_Export_") {
+				try? FileManager.default.removeItem(at: url)
+			}
 		}
 	}
 
@@ -841,7 +852,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
 
-		let targetOrgVol = Float(organicHeartbeatVolume * masterVolume) * soundscapeMultiplier
+		let orgHeartbeatBoost = enableIntimateMode ? 1.0 : 2.5
+		let targetOrgVol = Float(organicHeartbeatVolume * masterVolume * orgHeartbeatBoost) * soundscapeMultiplier
 		organicHeartbeatPlayerNode?.volume = targetOrgVol
 
 		importedMixer.outputVolume = 1.0
@@ -1823,7 +1835,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let wVol = Float(config.whooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
-				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart, intimate: state.enableIntimateMode)
+				let heartVolBoost: Float = state.enableIntimateMode ? 1.0 : 2.5
+				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart * heartVolBoost, intimate: state.enableIntimateMode)
 
 				var chunkCL: Float = 0; var chunkCR: Float = 0
 				if vClock > 0 {
@@ -2603,29 +2616,10 @@ struct SoundscapeView: View {
 	@ObservedObject var engine: AudioEngineManager
 	@State private var showingFilePicker = false
 	@State private var showingMusicPicker = false
-	@State private var showingRecommendations = false
 
 	var body: some View {
 		NavigationView {
 			Form {
-				Section(header: Text("Personalized Soundscape")) {
-					Button(action: { showingRecommendations = true }) {
-						HStack {
-							Image(systemName: "sparkles")
-								.foregroundColor(.purple)
-								.font(.title3)
-							VStack(alignment: .leading, spacing: 2) {
-								Text("Get Recommendations")
-									.font(.headline)
-									.foregroundColor(.primary)
-								Text("Select your personality and preference")
-									.font(.caption)
-									.foregroundColor(.secondary)
-							}
-						}
-					}
-				}
-
 				Section(header: Text("Organic Elements").accessibilityHidden(true)) {
 					VStack(alignment: .leading) {
 						Text("Rain Volume").accessibilityHidden(true)
@@ -2666,9 +2660,6 @@ struct SoundscapeView: View {
 				MediaPicker(isPresented: $showingMusicPicker) { items in
 					engine.addAppleMusic(items: items.items)
 				}
-			}
-			.sheet(isPresented: $showingRecommendations) {
-				RecommendationView(engine: engine)
 			}
 		}
 	}
@@ -3066,7 +3057,12 @@ struct ExportView: View {
 			}
 			.navigationTitle("Export Soundscape")
 			.navigationBarItems(trailing: Button("Done") { presentationMode.wrappedValue.dismiss() })
-			.sheet(isPresented: $showShareSheet) {
+			.sheet(isPresented: $showShareSheet, onDismiss: {
+				if let url = exportedURL {
+					try? FileManager.default.removeItem(at: url)
+					exportedURL = nil
+				}
+			}) {
 				if let url = exportedURL {
 					ShareSheet(activityItems: [url])
 				}
@@ -3598,303 +3594,6 @@ func getRecommendation(personality: Int, preference: Int, sensitivity: Int, inti
 		binauralVol = max(binauralVol, 0.6)
 		orgHeartbeatVol = max(orgHeartbeatVol, 0.6)
 	}
-
-	return SoundscapeRecommendation(
-		name: name,
-		rationale: rationale,
-		profileIndex: profileIndex,
-		rainVolume: rainVol,
-		organicHeartbeatVolume: orgHeartbeatVol,
-		heartbeatVolume: heartbeatVol,
-		clockVolume: clockVol,
-		clickVolume: clickVol,
-		softClickVolume: softClickVol,
-		brownVolume: brownVol,
-		whiteVolume: whiteVol,
-		breathVolume: breathVol,
-		faceBrushVolume: faceBrushVol,
-		binauralVolume: binauralVol,
-		binauralTypeIndex: binauralType,
-		clockTypeIndex: clockType,
-		clickPatternIndex: clickPattern,
-		syncClock: syncClk,
-		syncClick: syncClkTrk,
-		enableRSA: rsa,
-		enableHSPMode: hsp,
-		enableIntimateMode: intimate,
-		enableSlowdown: slowdown,
-		targetBPM: tgtBPM,
-		slowdownMinutes: slowdownMin,
-		syncBreathing: syncBreath,
-		enableHaptics: haptics,
-		enableEnhancedAnchors: anchors,
-		useWhisper: whisper,
-		useRealBreathing: realBreath,
-		suggestedImports: imports,
-		importReason: impReason
-	)
-}
-
-struct RecommendationView: View {
-	@ObservedObject var engine: AudioEngineManager
-	@Environment(\.presentationMode) var presentationMode
-	
-	@State private var selectedPersonality = 0
-	@State private var selectedPreference = 0
-	@State private var selectedSensitivity = 0
-	@State private var selectedIntimacy = 0
-	@State private var selectedEnvironment = 0
-	@State private var showAppliedSuccess = false
-	
-	let personalities = [
-		String(localized: "Anxious / Overthinking"),
-		String(localized: "Stressed / High Pressure"),
-		String(localized: "Tired / Exhausted"),
-		String(localized: "Calm / Meditative"),
-		String(localized: "Restless / ADHD")
-	]
-	
-	let preferences = [
-		String(localized: "Deep Sleep"),
-		String(localized: "ASMR & Intimacy"),
-		String(localized: "Calm & Grounding"),
-		String(localized: "Focus & Study"),
-		String(localized: "Stress Relief")
-	]
-	
-	let sensitivities = [
-		String(localized: "Normal Sensitivity"),
-		String(localized: "High Sensitivity (HSP)"),
-		String(localized: "Sensory Seeking")
-	]
-	
-	let intimacies = [
-		String(localized: "Neutral Space"),
-		String(localized: "Crave Comforting Presence"),
-		String(localized: "ASMR Whispering")
-	]
-	
-	let environments = [
-		String(localized: "Rain & Storms"),
-		String(localized: "Ocean & Water"),
-		String(localized: "Nature & Forest"),
-		String(localized: "Mechanical & Urban"),
-		String(localized: "Void & Abstract")
-	]
-	
-	var recommendation: SoundscapeRecommendation {
-		getRecommendation(personality: selectedPersonality, preference: selectedPreference, sensitivity: selectedSensitivity, intimacy: selectedIntimacy, environment: selectedEnvironment)
-	}
-	
-	var body: some View {
-		NavigationView {
-			Form {
-				Section(header: Text("1. Select Your Personality / State")) {
-					Picker("Personality", selection: $selectedPersonality) {
-						ForEach(0..<personalities.count, id: \.self) { index in
-							Text(personalities[index]).tag(index)
-						}
-					}
-					.pickerStyle(WheelPickerStyle())
-					.frame(height: 110)
-				}
-				
-				Section(header: Text("2. Select Your Sleep/Focus Preference")) {
-					Picker("Preference", selection: $selectedPreference) {
-						ForEach(0..<preferences.count, id: \.self) { index in
-							Text(preferences[index]).tag(index)
-						}
-					}
-					.pickerStyle(WheelPickerStyle())
-					.frame(height: 110)
-				}
-				
-				Section(header: Text("3. Sensitivity to Noise")) {
-					Picker("Sensitivity", selection: $selectedSensitivity) {
-						ForEach(0..<sensitivities.count, id: \.self) { index in
-							Text(sensitivities[index]).tag(index)
-						}
-					}
-					.pickerStyle(WheelPickerStyle())
-					.frame(height: 90)
-				}
-				
-				Section(header: Text("4. Intimacy & Presence")) {
-					Picker("Intimacy", selection: $selectedIntimacy) {
-						ForEach(0..<intimacies.count, id: \.self) { index in
-							Text(intimacies[index]).tag(index)
-						}
-					}
-					.pickerStyle(WheelPickerStyle())
-					.frame(height: 90)
-				}
-				
-				Section(header: Text("5. Atmospheric Environment")) {
-					Picker("Environment", selection: $selectedEnvironment) {
-						ForEach(0..<environments.count, id: \.self) { index in
-							Text(environments[index]).tag(index)
-						}
-					}
-					.pickerStyle(WheelPickerStyle())
-					.frame(height: 90)
-				}
-				
-				Section(header: Text("Your Personalized Soundscape")) {
-					VStack(alignment: .leading, spacing: 10) {
-						HStack {
-							Image(systemName: "sparkles")
-								.foregroundColor(.purple)
-								.font(.title2)
-							Text(recommendation.name)
-								.font(.title3).bold()
-						}
-						.padding(.top, 5)
-						
-						Text(recommendation.rationale)
-							.font(.body)
-							.foregroundColor(.secondary)
-							.fixedSize(horizontal: false, vertical: true)
-						
-						Divider()
-							.padding(.vertical, 5)
-						
-						VStack(alignment: .leading, spacing: 4) {
-							Text("Recommended Settings:").font(.headline)
-							Group {
-								HStack {
-									Text("• Tone Profile:")
-									Spacer()
-									Text(engine.profiles[recommendation.profileIndex].name)
-										.foregroundColor(.purple).bold()
-								}
-								HStack {
-									Text("• Rain Volume:")
-									Spacer()
-									Text(String(format: "%.0f%%", recommendation.rainVolume * 100))
-								}
-								HStack {
-									Text("• Brown Noise:")
-									Spacer()
-									Text(String(format: "%.0f%%", recommendation.brownVolume * 100))
-								}
-								HStack {
-									Text("• slow breathing:")
-									Spacer()
-									Text(String(format: "%.0f%%", recommendation.breathVolume * 100))
-								}
-								HStack {
-									Text("• HSP Softening:")
-									Spacer()
-									Text(recommendation.enableHSPMode ? "Enabled" : "Off")
-								}
-							}
-							.font(.footnote)
-							.foregroundColor(.secondary)
-						}
-						
-						if showAppliedSuccess {
-							HStack {
-								Spacer()
-								Image(systemName: "checkmark.circle.fill")
-									.foregroundColor(.green)
-								Text("Applied Successfully!")
-									.foregroundColor(.green)
-									.bold()
-								Spacer()
-							}
-							.padding(.vertical, 8)
-							.transition(.opacity)
-						} else {
-							Button(action: {
-								applySettings(recommendation)
-							}) {
-								Text("Apply Recommended Settings")
-									.bold()
-									.frame(maxWidth: .infinity)
-									.padding()
-									.background(Color.purple)
-									.foregroundColor(.white)
-									.cornerRadius(10)
-							}
-							.padding(.top, 10)
-						}
-					}
-					.padding(.vertical, 5)
-				}
-				
-				Section(header: Text("Suggested Sounds to Import")) {
-					VStack(alignment: .leading, spacing: 10) {
-						Text("Enhance your soundscape by importing these sounds:")
-							.font(.subheadline).bold()
-						
-						ForEach(recommendation.suggestedImports, id: \.self) { sound in
-							HStack {
-								Image(systemName: "arrow.down.doc.fill")
-									.foregroundColor(.blue)
-								Text(sound)
-									.font(.body)
-							}
-						}
-						
-						Divider()
-						
-						Text(recommendation.importReason)
-							.font(.caption)
-							.foregroundColor(.secondary)
-							.fixedSize(horizontal: false, vertical: true)
-					}
-					.padding(.vertical, 5)
-				}
-			}
-			.navigationTitle("Personalizer")
-			.navigationBarItems(trailing: Button("Done") { presentationMode.wrappedValue.dismiss() })
-		}
-	}
-	
-	private func applySettings(_ rec: SoundscapeRecommendation) {
-		engine.selectedProfileIndex = rec.profileIndex
-		engine.rainVolume = rec.rainVolume
-		engine.organicHeartbeatVolume = rec.organicHeartbeatVolume
-		engine.heartbeatVolume = rec.heartbeatVolume
-		engine.clockVolume = rec.clockVolume
-		engine.clickVolume = rec.clickVolume
-		engine.softClickVolume = rec.softClickVolume
-		engine.brownVolume = rec.brownVolume
-		engine.whiteVolume = rec.whiteVolume
-		engine.breathVolume = rec.breathVolume
-		engine.faceBrushVolume = rec.faceBrushVolume
-		engine.binauralVolume = rec.binauralVolume
-		
-		engine.binauralTypeIndex = rec.binauralTypeIndex
-		engine.clockTypeIndex = rec.clockTypeIndex
-		engine.clickPatternIndex = rec.clickPatternIndex
-		engine.syncClock = rec.syncClock
-		engine.syncClick = rec.syncClick
-		engine.enableRSA = rec.enableRSA
-		engine.enableHSPMode = rec.enableHSPMode
-		engine.enableIntimateMode = rec.enableIntimateMode
-		engine.enableSlowdown = rec.enableSlowdown
-		engine.targetBPM = rec.targetBPM
-		engine.slowdownMinutes = rec.slowdownMinutes
-		engine.syncBreathing = rec.syncBreathing
-		engine.enableHaptics = rec.enableHaptics
-		engine.enableEnhancedAnchors = rec.enableEnhancedAnchors
-		engine.useWhisper = rec.useWhisper
-		engine.useRealBreathing = rec.useRealBreathing
-		
-		BeepGenerator.shared.playTabBeep()
-		
-		withAnimation {
-			showAppliedSuccess = true
-		}
-		
-		DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-			withAnimation {
-				showAppliedSuccess = false
-			}
-		}
-	}
-}
 
 struct ContentView: View {
 	@StateObject var engine = AudioEngineManager()
