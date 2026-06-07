@@ -2001,7 +2001,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 			updateVoiceRouting()
 			updateReverb()
-			updateProximityEQ()
 			updateHSPMode()
 		}
 	}
