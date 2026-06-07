@@ -1520,6 +1520,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		guard !alarmPath.isEmpty else { return }
 		
 		beginAlarmCrossfade()
+		dynamicVolumeMultiplier = 1.0
 		startSoundscape(startMuted: false, announcement: nil, includeMeditation: false)
 		var fadeStep = 0
 		let totalSteps = max(1, Int(alarmCrossfadeDuration * 10))
@@ -1529,11 +1530,15 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			fadeStep += 1
 			let progress = Double(fadeStep) / Double(totalSteps)
 			self.alarmFadeMultiplier = pow(progress, 3.0)
+			self.morningFadeMultiplier = 1.0 - progress
+			self.updateSilentBackgroundAudio()
 			
 			if fadeStep >= totalSteps {
 				timer.invalidate()
 				self.alarmFadeMultiplier = 1.0
+				self.morningFadeMultiplier = 0.0
 				self.morningAlarmPhase = .ringing
+				self.stopSoundscape(keepEngineAlive: true)
 			}
 		}
 	}
