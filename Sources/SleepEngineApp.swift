@@ -1391,7 +1391,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				dynamicVolumeMultiplier = 1.0
 			}
 			morningFadeMultiplier = (shouldFadeInSoundscape || isPlaying) ? 1.0 - progress : 0.0
-			alarmFadeMultiplier = progress
+			alarmFadeMultiplier = pow(progress, 3.0)
 			if shouldFadeInSoundscape && !isPlaying {
 				startSoundscape(startMuted: false, announcement: nil, includeMeditation: false)
 			}
@@ -1508,6 +1508,30 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if self.isPlaying { self.stopSoundscape(keepEngineAlive: false) }
 				self.dynamicVolumeMultiplier = 1.0
 				self.updateHSPMode()
+			}
+		}
+	}
+
+	func simulateMorningFadeIn() {
+		simulationTask?.cancel()
+		stopAlarm()
+		
+		guard !alarmPath.isEmpty else { return }
+		
+		beginAlarmCrossfade()
+		var fadeStep = 0
+		let totalSteps = Int(alarmCrossfadeDuration * 10)
+		fadeTimer?.invalidate()
+		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+			guard let self = self else { return }
+			fadeStep += 1
+			let progress = Double(fadeStep) / Double(totalSteps)
+			self.alarmFadeMultiplier = pow(progress, 3.0)
+			
+			if fadeStep >= totalSteps {
+				timer.invalidate()
+				self.alarmFadeMultiplier = 1.0
+				self.morningAlarmPhase = .ringing
 			}
 		}
 	}
@@ -2917,6 +2941,7 @@ struct SleepTimerView: View {
 
 				Section(header: Text("Simulation & Testing")) {
 					Button("Simulate Night Fade-Out") { engine.simulateNightFadeOut() }
+					Button("Simulate Morning Fade-In") { engine.simulateMorningFadeIn() }
 				}
 			}
 			.navigationTitle("Sleep Settings")
