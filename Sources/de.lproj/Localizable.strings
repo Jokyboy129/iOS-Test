@@ -202,3 +202,6 @@
 /* Heartbeat Setting */
 "Natural Acoustic Heartbeats" = "Natürliche akustische Herzschläge";
 "Makes synth heartbeats very present with no background noise." = "Macht synthetische Herzschläge sehr präsent, ohne Hintergrundrauschen.";
+
+"Alarm Fade Duration: %lld seconds" = "Wecker Fade-In Dauer: %lld Sekunden";
+"Simulate Morning Fade-In" = "Morgen Fade-In simulieren";

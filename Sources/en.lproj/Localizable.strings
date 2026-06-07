@@ -182,3 +182,6 @@
 /* Heartbeat Setting */
 "Natural Acoustic Heartbeats" = "Natural Acoustic Heartbeats";
 "Makes synth heartbeats very present with no background noise." = "Makes synth heartbeats very present with no background noise.";
+
+"Alarm Fade Duration: %lld seconds" = "Alarm Fade Duration: %lld seconds";
+"Simulate Morning Fade-In" = "Simulate Morning Fade-In";

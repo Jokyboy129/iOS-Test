@@ -310,7 +310,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var morningAlarmPhase: MorningAlarmPhase = .idle
 	private var activeMorningAlarmDate: Date?
 	private var lastAlarmFireDayKey = ""
-	private let alarmCrossfadeDuration: TimeInterval = 60.0
+	@Published var alarmCrossfadeDuration: TimeInterval = 60.0 { didSet { save("alarmCrossfadeDuration", alarmCrossfadeDuration) } }
 	private var wasPlayingBeforeInterruption = false
 	private var wasAlarmRingingBeforeInterruption = false
 	private var suppressRemotePauseUntil = Date.distantPast
@@ -459,6 +459,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.morningAlarmDate = ud.object(forKey: "morningAlarmDate") as? Date ?? Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
 		self.morningSoundscapeFadeMinutes = ud.object(forKey: "morningSoundscapeFadeMinutes") == nil ? 20.0 : ud.double(forKey: "morningSoundscapeFadeMinutes")
 		self.alarmVolume = ud.object(forKey: "alarmVolume") == nil ? 1.0 : ud.double(forKey: "alarmVolume")
+		self.alarmCrossfadeDuration = ud.object(forKey: "alarmCrossfadeDuration") as? TimeInterval ?? 60.0
 		self.alarmPath = ud.string(forKey: "alarmPath") ?? ""
 		self.alarmIsAppleMusic = ud.bool(forKey: "alarmIsAppleMusic")
 		self.alarmNameStorage = ud.string(forKey: "alarmNameStorage") ?? "None"
@@ -1386,7 +1387,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			if morningAlarmPhase != .alarmCrossfade {
 				beginAlarmCrossfade()
 			}
-			let progress = min(1.0, max(0.0, now.timeIntervalSince(alarmDate) / alarmCrossfadeDuration))
+			let progress = min(1.0, max(0.0, now.timeIntervalSince(alarmDate) / max(0.1, alarmCrossfadeDuration)))
 			if shouldFadeInSoundscape {
 				dynamicVolumeMultiplier = 1.0
 			}
@@ -1519,8 +1520,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		guard !alarmPath.isEmpty else { return }
 		
 		beginAlarmCrossfade()
+		startSoundscape(startMuted: false, announcement: nil, includeMeditation: false)
 		var fadeStep = 0
-		let totalSteps = Int(alarmCrossfadeDuration * 10)
+		let totalSteps = max(1, Int(alarmCrossfadeDuration * 10))
 		fadeTimer?.invalidate()
 		fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
 			guard let self = self else { return }
@@ -2901,6 +2903,10 @@ struct SleepTimerView: View {
 						VStack(alignment: .leading) {
 							Text("Alarm Volume")
 							Slider(value: $engine.alarmVolume, in: 0...1)
+						}
+						VStack(alignment: .leading) {
+							Text("Alarm Fade Duration: \(Int(engine.alarmCrossfadeDuration)) seconds")
+							Slider(value: $engine.alarmCrossfadeDuration, in: 0...120, step: 1)
 						}
 						HStack {
 							Text(engine.alarmNameStorage == "None" ? String(localized: "None") : engine.alarmNameStorage)
