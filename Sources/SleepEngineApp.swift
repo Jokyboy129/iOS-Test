@@ -209,7 +209,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	let placementOptions = [
 		String(localized: "Center Beats & Flow"),
 		String(localized: "Lub Left Ear / Dub Right Ear"),
-		String(localized: "Lub Right Ear / Dub Left Ear")
+		String(localized: "Lub Right Ear / Dub Left Ear"),
+		String(localized: "Isolated Both Ears")
 	]
 	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
 	let reverbOptions = [
@@ -1824,8 +1825,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					hL = (combinedLub + combinedDub) * 0.85; hR = (combinedLub + combinedDub) * 0.85
 				} else if state.placementIndex == 1 {
 					hL = combinedLub; hR = combinedDub
-				} else {
+				} else if state.placementIndex == 2 {
 					hL = combinedDub; hR = combinedLub
+				} else {
+					hL = (combinedLub + combinedDub) * 0.85; hR = -(combinedLub + combinedDub) * 0.85
 				}
 				flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
 
@@ -2171,8 +2174,11 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				localDubL[i] = combinedDub * 0.85; localDubR[i] = combinedDub * 0.85
 			} else if placementIndex == 1 {
 				localLubL[i] = combinedLub; localLubR[i] = 0; localDubL[i] = 0; localDubR[i] = combinedDub
-			} else {
+			} else if placementIndex == 2 {
 				localLubL[i] = 0; localLubR[i] = combinedLub; localDubL[i] = combinedDub; localDubR[i] = 0
+			} else {
+				localLubL[i] = combinedLub * 0.85; localLubR[i] = -combinedLub * 0.85
+				localDubL[i] = combinedDub * 0.85; localDubR[i] = -combinedDub * 0.85
 			}
 		}
 
