@@ -339,6 +339,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var lubEnv = [Float]()
 	private var dubEnv = [Float]()
 	private var nBeat = 0
+	private var haasBuffer = [Float](repeating: 0.0, count: 2048)
+	private var haasIdx = 0
 
 	private var brownL = [Float]()
 	private var brownR = [Float]()
@@ -1828,7 +1830,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				} else if state.placementIndex == 2 {
 					hL = combinedDub; hR = combinedLub
 				} else {
-					hL = (combinedLub + combinedDub) * 0.85; hR = -(combinedLub + combinedDub) * 0.85
+					let monoHeart = (combinedLub + combinedDub) * 0.85
+					self.haasBuffer[self.haasIdx] = monoHeart
+					let delaySamples = Int(0.015 * self.sampleRate)
+					let readIdx = (self.haasIdx - delaySamples + self.haasBuffer.count) % self.haasBuffer.count
+					hL = monoHeart
+					hR = self.haasBuffer[readIdx]
+					self.haasIdx = (self.haasIdx + 1) % self.haasBuffer.count
 				}
 				flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
 
@@ -2177,8 +2185,12 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			} else if placementIndex == 2 {
 				localLubL[i] = 0; localLubR[i] = combinedLub; localDubL[i] = combinedDub; localDubR[i] = 0
 			} else {
-				localLubL[i] = combinedLub * 0.85; localLubR[i] = -combinedLub * 0.85
-				localDubL[i] = combinedDub * 0.85; localDubR[i] = -combinedDub * 0.85
+				localLubL[i] = combinedLub * 0.85
+				localDubL[i] = combinedDub * 0.85
+				let delaySamples = Int(0.015 * 44100.0)
+				let delayedI = max(0, i - delaySamples)
+				localLubR[i] = localLubL[delayedI]
+				localDubR[i] = localDubL[delayedI]
 			}
 		}
 
