@@ -2168,13 +2168,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			let lubPhase = 2 * Double.pi * (config.lubBase * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
 			let lub = sin(lubPhase) * lEnv
 
-			var dEnv: Double = 0; var subDub: Double = 0; var dub: Double = 0
+			var dEnv: Double = 0; var sDEnv: Double = 0; var subDub: Double = 0; var dub: Double = 0
 			if i >= idxStart {
 				let tAct = t - config.dubDelay; dEnv = exp(-config.dubDecay * tAct)
 				let relI = i - idxStart
 				if relI < atkSamples { dEnv *= pow(sin((Double.pi / 2.0) * Double(relI) / Double(atkSamples)), 2) }
 				if i > nBeat - relSamples { dEnv *= pow(cos((Double.pi / 2.0) * Double(i - (nBeat - relSamples)) / Double(relSamples)), 2) }
-				var sDEnv = exp(-config.subDecay * tAct)
+				sDEnv = exp(-config.subDecay * tAct)
 				if relI < atkSamples { sDEnv *= pow(sin((Double.pi / 2.0) * Double(relI) / Double(atkSamples)), 2) }
 				if i > nBeat - relSamples { sDEnv *= pow(cos((Double.pi / 2.0) * Double(i - (nBeat - relSamples)) / Double(relSamples)), 2) }
 				subDub = sin(2 * Double.pi * trueSubFreq * t) * sDEnv * config.subVol * 0.85
