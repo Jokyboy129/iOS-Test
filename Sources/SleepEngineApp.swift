@@ -1829,15 +1829,18 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					let lubPhaseR = 2 * Double.pi * ((config.lubBase * 1.08) * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
 					var lubR = sin(lubPhaseR) * lEnv
 					if state.enableNaturalAcousticHeart { lubR = tanh(lubR * 2.5) }
+					let subLubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * t) * slEnv * config.subVol
 					var dubR = 0.0
+					var subDubR = 0.0
 					if t >= config.dubDelay {
 						let tAct = t - config.dubDelay
 						let dubPhaseR = 2 * Double.pi * ((config.dubBase * 1.08) * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
 						dubR = sin(dubPhaseR) * dEnv
 						if state.enableNaturalAcousticHeart { dubR = tanh(dubR * 2.5) }
+						subDubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tAct) * sdEnv * config.subVol * 0.85
 					}
-					let combinedLubR = Float((lubR + subLub) * 0.8)
-					let combinedDubR = Float((dubR + subDub) * 0.8)
+					let combinedLubR = Float((lubR + subLubR) * 0.8)
+					let combinedDubR = Float((dubR + subDubR) * 0.8)
 					
 					hL = (combinedLub + combinedDub) * 0.85
 					hR = (combinedLubR + combinedDubR) * 0.85
@@ -2191,16 +2194,19 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			} else {
 				let lubPhaseR = 2 * Double.pi * ((config.lubBase * 1.08) * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
 				var lubR = sin(lubPhaseR) * lEnv
+				let subLubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * t) * sLEnv * config.subVol
 				
 				var dubR: Double = 0
+				var subDubR: Double = 0
 				if i >= idxStart {
 					let tAct = t - config.dubDelay
 					let dubPhaseR = 2 * Double.pi * ((config.dubBase * 1.08) * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
 					dubR = sin(dubPhaseR) * dEnv
+					subDubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tAct) * sDEnv * config.subVol * 0.85
 				}
 				
-				let combinedLubR = Float(lubR + subLub)
-				let combinedDubR = Float(dubR + subDub)
+				let combinedLubR = Float(lubR + subLubR)
+				let combinedDubR = Float(dubR + subDubR)
 				
 				localLubL[i] = combinedLub * 0.85
 				localDubL[i] = combinedDub * 0.85
