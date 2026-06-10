@@ -25,7 +25,8 @@
 "Center Beats & Flow" = "Zentrierte Beats & Fluss";
 "Lub Left Ear / Dub Right Ear" = "Lub Linkes Ohr / Dub Rechtes Ohr";
 "Lub Right Ear / Dub Left Ear" = "Lub Rechtes Ohr / Dub Linkes Ohr";
-"Isolated Both Ears" = "Isoliert auf beiden Ohren";
+"Isolated Both Ears (Wide Stereo)" = "Isoliert auf beiden Ohren (Breites Stereo)";
+"Isolated Both Ears (Alternating)" = "Isoliert auf beiden Ohren (Abwechselnd)";
 
 /* Instruments & Types */
 "Quartz Wall Clock" = "Quarz-Wanduhr";

@@ -210,7 +210,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		String(localized: "Center Beats & Flow"),
 		String(localized: "Lub Left Ear / Dub Right Ear"),
 		String(localized: "Lub Right Ear / Dub Left Ear"),
-		String(localized: "Isolated Both Ears")
+		String(localized: "Isolated Both Ears (Wide Stereo)"),
+		String(localized: "Isolated Both Ears (Alternating)")
 	]
 	let anchors = ["DRIFTING", "LETTING_GO", "DEEPER", "RELAX"]
 	let reverbOptions = [
@@ -1825,25 +1826,51 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					hL = combinedLub; hR = combinedDub
 				} else if state.placementIndex == 2 {
 					hL = combinedDub; hR = combinedLub
-				} else {
-					let lubPhaseR = 2 * Double.pi * ((config.lubBase * 1.08) * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
-					var lubR = sin(lubPhaseR) * lEnv
+				} else if state.placementIndex == 3 || state.placementIndex == 4 {
+					let tRight = state.placementIndex == 3 
+						? (t + 0.03).truncatingRemainder(dividingBy: beatDuration)
+						: (t + beatDuration / 2).truncatingRemainder(dividingBy: beatDuration)
+					
+					let atkR = 0.04; let relR = 0.02
+					var lEnvR = exp(-config.lubDecay * tRight); var slEnvR = exp(-config.subDecay * tRight)
+					if tRight < atkR {
+						let attackCurve = pow(sin((Double.pi / 2.0) * tRight / atkR), 2)
+						lEnvR *= attackCurve; slEnvR *= attackCurve
+					}
+					if tRight > beatDuration - relR {
+						let releaseCurve = pow(cos((Double.pi / 2.0) * (tRight - (beatDuration - relR)) / relR), 2)
+						lEnvR *= releaseCurve; slEnvR *= releaseCurve
+					}
+					let lubPhaseR = 2 * Double.pi * ((config.lubBase * 1.08) * tRight - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * tRight))
+					var lubR = sin(lubPhaseR) * lEnvR
 					if state.enableNaturalAcousticHeart { lubR = tanh(lubR * 2.5) }
-					let subLubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * t) * slEnv * config.subVol
+					let subLubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tRight) * slEnvR * config.subVol
 					var dubR = 0.0
 					var subDubR = 0.0
-					if t >= config.dubDelay {
-						let tAct = t - config.dubDelay
+					if tRight >= config.dubDelay {
+						let tAct = tRight - config.dubDelay
+						var dEnvR = exp(-config.dubDecay * tAct); var sdEnvR = exp(-config.subDecay * tAct)
+						if tAct < atkR {
+							let attackCurve = pow(sin((Double.pi / 2.0) * tAct / atkR), 2)
+							dEnvR *= attackCurve; sdEnvR *= attackCurve
+						}
+						if tRight > beatDuration - relR {
+							let releaseCurve = pow(cos((Double.pi / 2.0) * (tRight - (beatDuration - relR)) / relR), 2)
+							dEnvR *= releaseCurve; sdEnvR *= releaseCurve
+						}
 						let dubPhaseR = 2 * Double.pi * ((config.dubBase * 1.08) * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
-						dubR = sin(dubPhaseR) * dEnv
+						dubR = sin(dubPhaseR) * dEnvR
 						if state.enableNaturalAcousticHeart { dubR = tanh(dubR * 2.5) }
-						subDubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tAct) * sdEnv * config.subVol * 0.85
+						subDubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tAct) * sdEnvR * config.subVol * 0.85
 					}
 					let combinedLubR = Float((lubR + subLubR) * 0.8)
 					let combinedDubR = Float((dubR + subDubR) * 0.8)
 					
 					hL = (combinedLub + combinedDub) * 0.85
 					hR = (combinedLubR + combinedDubR) * 0.85
+				} else {
+					hL = (combinedLub + combinedDub) * 0.85
+					hR = (combinedLub + combinedDub) * 0.85
 				}
 				flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
 
@@ -2191,18 +2218,55 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				localLubL[i] = combinedLub; localLubR[i] = 0; localDubL[i] = 0; localDubR[i] = combinedDub
 			} else if placementIndex == 2 {
 				localLubL[i] = 0; localLubR[i] = combinedLub; localDubL[i] = combinedDub; localDubR[i] = 0
-			} else {
-				let lubPhaseR = 2 * Double.pi * ((config.lubBase * 1.08) * t - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * t))
-				var lubR = sin(lubPhaseR) * lEnv
-				let subLubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * t) * sLEnv * config.subVol
+			} else if placementIndex == 3 || placementIndex == 4 {
+				let isAlternating = placementIndex == 4
+				let tRight = isAlternating 
+					? (t + actualBeatDur / 2).truncatingRemainder(dividingBy: actualBeatDur)
+					: (t + 0.03).truncatingRemainder(dividingBy: actualBeatDur)
+				
+				var lEnvR = exp(-config.lubDecay * tRight)
+				var sLEnvR = exp(-config.subDecay * tRight)
+				
+				let iRight = Int(tRight * self.sampleRate)
+				
+				if iRight < atkSamples { 
+					let attackCurve = pow(sin((Double.pi / 2.0) * Double(iRight) / Double(atkSamples)), 2)
+					lEnvR *= attackCurve
+					sLEnvR *= attackCurve
+				}
+				if iRight > nBeat - relSamples { 
+					let releaseCurve = pow(cos((Double.pi / 2.0) * Double(iRight - (nBeat - relSamples)) / Double(relSamples)), 2)
+					lEnvR *= releaseCurve
+					sLEnvR *= releaseCurve
+				}
+				
+				let lubPhaseR = 2 * Double.pi * ((config.lubBase * 1.08) * tRight - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * tRight))
+				let lubR = sin(lubPhaseR) * lEnvR
+				let subLubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tRight) * sLEnvR * config.subVol
 				
 				var dubR: Double = 0
 				var subDubR: Double = 0
-				if i >= idxStart {
-					let tAct = t - config.dubDelay
-					let dubPhaseR = 2 * Double.pi * ((config.dubBase * 1.08) * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
-					dubR = sin(dubPhaseR) * dEnv
-					subDubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tAct) * sDEnv * config.subVol * 0.85
+				
+				if tRight >= config.dubDelay {
+					let tActR = tRight - config.dubDelay
+					let iActR = Int(tActR * self.sampleRate)
+					var dEnvR = exp(-config.dubDecay * tActR)
+					var sDEnvR = exp(-config.subDecay * tActR)
+					
+					if iActR < atkSamples { 
+						let attackCurve = pow(sin((Double.pi / 2.0) * Double(iActR) / Double(atkSamples)), 2)
+						dEnvR *= attackCurve
+						sDEnvR *= attackCurve
+					}
+					if iRight > nBeat - relSamples { 
+						let releaseCurve = pow(cos((Double.pi / 2.0) * Double(iRight - (nBeat - relSamples)) / Double(relSamples)), 2)
+						dEnvR *= releaseCurve
+						sDEnvR *= releaseCurve
+					}
+					
+					let dubPhaseR = 2 * Double.pi * ((config.dubBase * 1.08) * tActR - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tActR))
+					dubR = sin(dubPhaseR) * dEnvR
+					subDubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tActR) * sDEnvR * config.subVol * 0.85
 				}
 				
 				let combinedLubR = Float(lubR + subLubR)
@@ -2212,6 +2276,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				localDubL[i] = combinedDub * 0.85
 				localLubR[i] = combinedLubR * 0.85
 				localDubR[i] = combinedDubR * 0.85
+			} else {
+				localLubL[i] = combinedLub * 0.85; localLubR[i] = combinedLub * 0.85
+				localDubL[i] = combinedDub * 0.85; localDubR[i] = combinedDub * 0.85
 			}
 		}
 
