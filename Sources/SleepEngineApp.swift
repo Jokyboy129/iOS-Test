@@ -1827,9 +1827,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				} else if state.placementIndex == 2 {
 					hL = combinedDub; hR = combinedLub
 				} else if state.placementIndex == 3 || state.placementIndex == 4 {
-					let tRight = state.placementIndex == 3 
-						? (t + 0.03).truncatingRemainder(dividingBy: beatDuration)
-						: (t + beatDuration / 2).truncatingRemainder(dividingBy: beatDuration)
+					let isWideStereo = state.placementIndex == 3
+					let offset = isWideStereo ? 0.0 : 0.08
+					let tRight = (t + beatDuration - offset).truncatingRemainder(dividingBy: beatDuration)
 					
 					let atkR = 0.04; let relR = 0.02
 					var lEnvR = exp(-config.lubDecay * tRight); var slEnvR = exp(-config.subDecay * tRight)
@@ -1841,10 +1841,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						let releaseCurve = pow(cos((Double.pi / 2.0) * (tRight - (beatDuration - relR)) / relR), 2)
 						lEnvR *= releaseCurve; slEnvR *= releaseCurve
 					}
-					let lubPhaseR = 2 * Double.pi * ((config.lubBase * 1.08) * tRight - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * tRight))
-					var lubR = sin(lubPhaseR) * lEnvR
+					let lubPhaseR = 2 * Double.pi * (config.lubBase * tRight - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * tRight))
+					var lubR = isWideStereo ? cos(lubPhaseR) * lEnvR : sin(lubPhaseR) * lEnvR
 					if state.enableNaturalAcousticHeart { lubR = tanh(lubR * 2.5) }
-					let subLubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tRight) * slEnvR * config.subVol
+					let subLubR = isWideStereo ? cos(2 * Double.pi * trueSubFreq * tRight) * slEnvR * config.subVol : sin(2 * Double.pi * trueSubFreq * tRight) * slEnvR * config.subVol
 					var dubR = 0.0
 					var subDubR = 0.0
 					if tRight >= config.dubDelay {
@@ -1858,10 +1858,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							let releaseCurve = pow(cos((Double.pi / 2.0) * (tRight - (beatDuration - relR)) / relR), 2)
 							dEnvR *= releaseCurve; sdEnvR *= releaseCurve
 						}
-						let dubPhaseR = 2 * Double.pi * ((config.dubBase * 1.08) * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
-						dubR = sin(dubPhaseR) * dEnvR
+						let dubPhaseR = 2 * Double.pi * (config.dubBase * tAct - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tAct))
+						dubR = isWideStereo ? cos(dubPhaseR) * dEnvR : sin(dubPhaseR) * dEnvR
 						if state.enableNaturalAcousticHeart { dubR = tanh(dubR * 2.5) }
-						subDubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tAct) * sdEnvR * config.subVol * 0.85
+						subDubR = isWideStereo ? cos(2 * Double.pi * trueSubFreq * tAct) * sdEnvR * config.subVol * 0.85 : sin(2 * Double.pi * trueSubFreq * tAct) * sdEnvR * config.subVol * 0.85
 					}
 					let combinedLubR = Float((lubR + subLubR) * 0.8)
 					let combinedDubR = Float((dubR + subDubR) * 0.8)
@@ -2219,10 +2219,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			} else if placementIndex == 2 {
 				localLubL[i] = 0; localLubR[i] = combinedLub; localDubL[i] = combinedDub; localDubR[i] = 0
 			} else if placementIndex == 3 || placementIndex == 4 {
-				let isAlternating = placementIndex == 4
-				let tRight = isAlternating 
-					? (t + actualBeatDur / 2).truncatingRemainder(dividingBy: actualBeatDur)
-					: (t + 0.03).truncatingRemainder(dividingBy: actualBeatDur)
+				let isWideStereo = placementIndex == 3
+				let offset = isWideStereo ? 0.0 : 0.08
+				let tRight = (t + actualBeatDur - offset).truncatingRemainder(dividingBy: actualBeatDur)
 				
 				var lEnvR = exp(-config.lubDecay * tRight)
 				var sLEnvR = exp(-config.subDecay * tRight)
@@ -2240,9 +2239,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					sLEnvR *= releaseCurve
 				}
 				
-				let lubPhaseR = 2 * Double.pi * ((config.lubBase * 1.08) * tRight - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * tRight))
-				let lubR = sin(lubPhaseR) * lEnvR
-				let subLubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tRight) * sLEnvR * config.subVol
+				let lubPhaseR = 2 * Double.pi * (config.lubBase * tRight - (config.lubDrop / config.lubDecay) * exp(-config.lubDecay * tRight))
+				let lubR = isWideStereo ? cos(lubPhaseR) * lEnvR : sin(lubPhaseR) * lEnvR
+				let subLubR = isWideStereo ? cos(2 * Double.pi * trueSubFreq * tRight) * sLEnvR * config.subVol : sin(2 * Double.pi * trueSubFreq * tRight) * sLEnvR * config.subVol
 				
 				var dubR: Double = 0
 				var subDubR: Double = 0
@@ -2264,9 +2263,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						sDEnvR *= releaseCurve
 					}
 					
-					let dubPhaseR = 2 * Double.pi * ((config.dubBase * 1.08) * tActR - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tActR))
-					dubR = sin(dubPhaseR) * dEnvR
-					subDubR = sin(2 * Double.pi * (trueSubFreq * 1.08) * tActR) * sDEnvR * config.subVol * 0.85
+					let dubPhaseR = 2 * Double.pi * (config.dubBase * tActR - (config.dubDrop / config.dubDecay) * exp(-config.dubDecay * tActR))
+					dubR = isWideStereo ? cos(dubPhaseR) * dEnvR : sin(dubPhaseR) * dEnvR
+					subDubR = isWideStereo ? cos(2 * Double.pi * trueSubFreq * tActR) * sDEnvR * config.subVol * 0.85 : sin(2 * Double.pi * trueSubFreq * tActR) * sDEnvR * config.subVol * 0.85
 				}
 				
 				let combinedLubR = Float(lubR + subLubR)
