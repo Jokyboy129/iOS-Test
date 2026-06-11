@@ -505,8 +505,16 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private func cleanupOldExportFiles() {
 		let tempDir = FileManager.default.temporaryDirectory
 		if let urls = try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil) {
-			for url in urls where url.lastPathComponent.hasPrefix("SleepEngine_Export_") {
-				try? FileManager.default.removeItem(at: url)
+			for url in urls {
+				let fileName = url.lastPathComponent
+				if fileName.hasPrefix("SleepEngine_Export_") || fileName.hasPrefix("SleepEngine_PingPong_") {
+					try? FileManager.default.removeItem(at: url)
+				} else if url.pathExtension.lowercased() == "wav" {
+					let nameWithoutExt = url.deletingPathExtension().lastPathComponent
+					if UUID(uuidString: nameWithoutExt) != nil {
+						try? FileManager.default.removeItem(at: url)
+					}
+				}
 			}
 		}
 	}
@@ -570,7 +578,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		if buffer.isEmpty || duration <= 0 { return nil }
 		let frameCount = Int(duration * sampleRate)
 		let tempDir = FileManager.default.temporaryDirectory
-		let fileURL = tempDir.appendingPathComponent(UUID().uuidString + ".wav")
+		let fileURL = tempDir.appendingPathComponent("SleepEngine_PingPong_" + UUID().uuidString + ".wav")
 		do {
 			let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
 			let file = try AVAudioFile(forWriting: fileURL, settings: format.settings)
@@ -1560,7 +1568,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			   let file = try? AVAudioFile(forReading: wavURL) {
 				node.stop()
 				node.pan = getPanPos(mode: panBreathIndex, time: 0)
-				node.scheduleFile(file, at: nil)
+				node.scheduleFile(file, at: nil) {
+					try? FileManager.default.removeItem(at: wavURL)
+				}
 				node.play()
 				return
 			}
