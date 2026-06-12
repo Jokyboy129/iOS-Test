@@ -200,7 +200,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		String(localized: "Center"), String(localized: "Left"), String(localized: "Right"),
 		String(localized: "Soft Left"), String(localized: "Soft Right"),
 		String(localized: "1 Minute Slow Shift"), String(localized: "5 Minute Slow Shift"),
-		String(localized: "30 Minute Extra Slow Shift"), String(localized: "1 Hour Extra Slow Shift")
+		String(localized: "30 Minute Extra Slow Shift"), String(localized: "1 Hour Extra Slow Shift"),
+		String(localized: "Isolated Both Ears (Wide Stereo)"),
+		String(localized: "Isolated Both Ears (Alternating)")
 	]
 	let clockOptions = [
 		String(localized: "Quartz Wall Clock"), String(localized: "Pocket Watch"),
@@ -1924,19 +1926,71 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				var chunkClickL: Float = 0; var chunkClickR: Float = 0
-				if vClick > 0 && self.clickPlayIdx < click.count {
-					let cSample = click[self.clickPlayIdx]
-					let posClick = self.getPanPos(mode: state.panClickIndex, time: tChunk)
-					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vClick * 0.8)
-					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
-					self.clickPlayIdx += 1
+				if vClick > 0 {
+					let isWide = state.panClickIndex == 9
+					let isAlt = state.panClickIndex == 10
+					
+					if isWide || isAlt {
+						let offsetSamples = isAlt ? Int(0.08 * self.sampleRate) : Int(0.005 * self.sampleRate)
+						var playedL = false
+						var playedR = false
+						
+						if self.clickPlayIdx < click.count {
+							chunkClickL += click[self.clickPlayIdx] * vClick * 0.8
+							playedL = true
+						}
+						
+						let rIdx = self.clickPlayIdx - offsetSamples
+						if rIdx >= 0 && rIdx < click.count {
+							chunkClickR += click[rIdx] * vClick * 0.8
+							playedR = true
+						}
+						
+						if playedL || playedR {
+							self.clickPlayIdx += 1
+						}
+					} else {
+						if self.clickPlayIdx < click.count {
+							let cSample = click[self.clickPlayIdx]
+							let posClick = self.getPanPos(mode: state.panClickIndex, time: tChunk)
+							let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vClick * 0.8)
+							chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
+							self.clickPlayIdx += 1
+						}
+					}
 				}
-				if vSoftClick > 0 && self.softClickPlayIdx < clickSoft.count {
-					let cSample = clickSoft[self.softClickPlayIdx]
-					let posClick = self.getPanPos(mode: state.panSoftClickIndex, time: tChunk)
-					let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8 * softClickBoost)
-					chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
-					self.softClickPlayIdx += 1
+				if vSoftClick > 0 {
+					let isWide = state.panSoftClickIndex == 9
+					let isAlt = state.panSoftClickIndex == 10
+					
+					if isWide || isAlt {
+						let offsetSamples = isAlt ? Int(0.08 * self.sampleRate) : Int(0.005 * self.sampleRate)
+						var playedL = false
+						var playedR = false
+						
+						if self.softClickPlayIdx < clickSoft.count {
+							chunkClickL += clickSoft[self.softClickPlayIdx] * vSoftClick * 0.8 * softClickBoost
+							playedL = true
+						}
+						
+						let rIdx = self.softClickPlayIdx - offsetSamples
+						if rIdx >= 0 && rIdx < clickSoft.count {
+							chunkClickR += clickSoft[rIdx] * vSoftClick * 0.8 * softClickBoost
+							playedR = true
+						}
+						
+						if playedL || playedR {
+							self.softClickPlayIdx += 1
+						}
+					} else {
+						if self.softClickPlayIdx < clickSoft.count {
+							let cSample = clickSoft[self.softClickPlayIdx]
+							let posClick = self.getPanPos(mode: state.panSoftClickIndex, time: tChunk)
+							let pannedClick = self.applyStereoPan(inL: cSample, inR: cSample, pos: posClick, vol: vSoftClick * 0.8 * softClickBoost)
+							chunkClickL += pannedClick.0; chunkClickR += pannedClick.1
+							self.softClickPlayIdx += 1
+						}
+					}
 				}
 
 				var chunkBL: Float = 0; var chunkBR: Float = 0
