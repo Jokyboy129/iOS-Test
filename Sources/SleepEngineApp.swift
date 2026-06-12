@@ -200,6 +200,12 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		String(localized: "Center"), String(localized: "Left"), String(localized: "Right"),
 		String(localized: "Soft Left"), String(localized: "Soft Right"),
 		String(localized: "1 Minute Slow Shift"), String(localized: "5 Minute Slow Shift"),
+		String(localized: "30 Minute Extra Slow Shift"), String(localized: "1 Hour Extra Slow Shift")
+	]
+	let panClickOptions = [
+		String(localized: "Center"), String(localized: "Left"), String(localized: "Right"),
+		String(localized: "Soft Left"), String(localized: "Soft Right"),
+		String(localized: "1 Minute Slow Shift"), String(localized: "5 Minute Slow Shift"),
 		String(localized: "30 Minute Extra Slow Shift"), String(localized: "1 Hour Extra Slow Shift"),
 		String(localized: "Isolated Both Ears (Wide Stereo)"),
 		String(localized: "Isolated Both Ears (Alternating)")
@@ -2076,21 +2082,38 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					}
 
 					var breathSampleL: Float = 0; var breathSampleR: Float = 0
+					let isWideBr = state.panBreathIndex == 9
+					let isAltBr = state.panBreathIndex == 10
+					let offsetSamplesBr = (isWideBr || isAltBr) ? (isAltBr ? Int(0.08 * self.sampleRate) : Int(0.005 * self.sampleRate)) : 0
+
 					if state.useRealBreathing {
 						if usingInhale && !realInhale.isEmpty {
-							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realInhale.count)
-							breathSampleL = realInhale[idx]; breathSampleR = realInhale[idx]
+							let idxL = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realInhale.count)
+							let idxR = self.getPingPongIndex(index: max(0, sampleIdxForRealBreath - offsetSamplesBr), count: realInhale.count)
+							breathSampleL = realInhale[idxL]; breathSampleR = realInhale[idxR]
 						} else if usingExhale && !realExhale.isEmpty {
-							let idx = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realExhale.count)
-							breathSampleL = realExhale[idx]; breathSampleR = realExhale[idx]
+							let idxL = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realExhale.count)
+							let idxR = self.getPingPongIndex(index: max(0, sampleIdxForRealBreath - offsetSamplesBr), count: realExhale.count)
+							breathSampleL = realExhale[idxL]; breathSampleR = realExhale[idxR]
 						}
 					} else {
-						breathSampleL = breathL[idxNoise]; breathSampleR = breathR[idxNoise]
+						let count = breathL.count
+						if count > 0 {
+							let idxL = idxNoise % count
+							let idxR = ((idxNoise - offsetSamplesBr) % count + count) % count
+							breathSampleL = breathL[idxL]; breathSampleR = breathR[idxR]
+						}
 					}
-					let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
+
 					let realBreathVolMult: Float = state.useRealBreathing ? 10.0 : 2.5
-					let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult)
-					chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
+					if isWideBr || isAltBr {
+						chunkBrL = breathSampleL * breathEnv * vBreath * realBreathVolMult
+						chunkBrR = breathSampleR * breathEnv * vBreath * realBreathVolMult
+					} else {
+						let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
+						let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult)
+						chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
+					}
 				}
 
 				var chunkFaceBrushL: Float = 0; var chunkFaceBrushR: Float = 0
@@ -2956,8 +2979,8 @@ struct GeneratorView: View {
 				.pickerStyle(MenuPickerStyle())
 
 				Picker("Breathing Position", selection: $engine.panBreathIndex) {
-					ForEach(0..<engine.panOptions.count, id: \.self) { index in
-						Text(engine.panOptions[index]).tag(index)
+					ForEach(0..<engine.panClickOptions.count, id: \.self) { index in
+						Text(engine.panClickOptions[index]).tag(index)
 					}
 				}
 				.pickerStyle(MenuPickerStyle())
@@ -2970,15 +2993,15 @@ struct GeneratorView: View {
 				.pickerStyle(MenuPickerStyle())
 
 				Picker("Click Position", selection: $engine.panClickIndex) {
-					ForEach(0..<engine.panOptions.count, id: \.self) { index in
-						Text(engine.panOptions[index]).tag(index)
+					ForEach(0..<engine.panClickOptions.count, id: \.self) { index in
+						Text(engine.panClickOptions[index]).tag(index)
 					}
 				}
 				.pickerStyle(MenuPickerStyle())
 
 				Picker("Soft Click Position", selection: $engine.panSoftClickIndex) {
-					ForEach(0..<engine.panOptions.count, id: \.self) { index in
-						Text(engine.panOptions[index]).tag(index)
+					ForEach(0..<engine.panClickOptions.count, id: \.self) { index in
+						Text(engine.panClickOptions[index]).tag(index)
 					}
 				}
 				.pickerStyle(MenuPickerStyle())
