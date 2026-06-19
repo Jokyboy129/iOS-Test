@@ -19,6 +19,7 @@ struct HeartbeatProfile: Hashable, Codable {
 	let subDecay: Double
 	let whooshVol: Double
 	let noiseLpf: Double
+	var isOrganic: Bool? = false
 }
 
 struct TrackData: Codable, Identifiable {
@@ -131,6 +132,7 @@ struct AudioRenderState {
 	var soundscapeMultiplier: Float = 1.0
 	var isPlaying: Bool = false
 	var enableNaturalAcousticHeart: Bool = false
+	var isOrganic: Bool = false
 }
 
 struct MeditationItem {
@@ -162,8 +164,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	var rainPlayerNode: AVAudioPlayerNode?
 	var rainAudioFile: AVAudioFile?
-	var organicHeartbeatPlayerNode: AVAudioPlayerNode?
-	var organicHeartbeatAudioFile: AVAudioFile?
+
 	var alarmPlayer: AVAudioPlayer?
 	var exporterAlarmNode: AVAudioPlayerNode?
 	var exporterAlarmFile: AVAudioFile?
@@ -193,7 +194,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		HeartbeatProfile(name: String(localized: "Deep Trance (30 BPM)"), bpm: 30, lubBase: 25, lubDrop: 25, lubDecay: 10, dubBase: 30, dubDrop: 30, dubDecay: 12, dubDelay: 0.45, subFreq: 20, subVol: 0.75, subDecay: 3, whooshVol: 0.15, noiseLpf: 150),
 		HeartbeatProfile(name: String(localized: "Slow Wave Sleep (25 BPM)"), bpm: 25, lubBase: 22, lubDrop: 25, lubDecay: 8, dubBase: 26, dubDrop: 30, dubDecay: 10, dubDelay: 0.50, subFreq: 18, subVol: 0.85, subDecay: 2, whooshVol: 0.10, noiseLpf: 130),
 		HeartbeatProfile(name: String(localized: "Cinematic Oceanic (18 BPM)"), bpm: 18, lubBase: 25, lubDrop: 30, lubDecay: 8, dubBase: 30, dubDrop: 35, dubDecay: 10, dubDelay: 0.60, subFreq: 20, subVol: 0.90, subDecay: 2, whooshVol: 0.15, noiseLpf: 120),
-		HeartbeatProfile(name: String(localized: "Soft Pillowy Pulse (62 BPM)"), bpm: 62, lubBase: 40, lubDrop: 15, lubDecay: 25, dubBase: 50, dubDrop: 20, dubDecay: 30, dubDelay: 0.28, subFreq: 32, subVol: 0.35, subDecay: 6, whooshVol: 0.20, noiseLpf: 250)
+		HeartbeatProfile(name: String(localized: "Soft Pillowy Pulse (62 BPM)"), bpm: 62, lubBase: 40, lubDrop: 15, lubDecay: 25, dubBase: 50, dubDrop: 20, dubDecay: 30, dubDelay: 0.28, subFreq: 32, subVol: 0.35, subDecay: 6, whooshVol: 0.20, noiseLpf: 250),
+		HeartbeatProfile(name: String(localized: "Organic Acoustic Heartbeat (51 BPM)"), bpm: 51, lubBase: 0, lubDrop: 0, lubDecay: 0, dubBase: 0, dubDrop: 0, dubDecay: 0, dubDelay: 0, subFreq: 0, subVol: 0, subDecay: 0, whooshVol: 0, noiseLpf: 0, isOrganic: true)
 	]
 
 	let panOptions = [
@@ -252,7 +254,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var binauralVolume: Double = 0.0 { didSet { save("binauralVolume", binauralVolume); syncRenderState() } }
 
 	@Published var rainVolume: Double = 0.0 { didSet { save("rainVolume", rainVolume); updateVolumes() } }
-	@Published var organicHeartbeatVolume: Double = 0.0 { didSet { save("organicHeartbeatVolume", organicHeartbeatVolume); updateVolumes() } }
 
 	@Published var panHeartIndex: Int = 0 { didSet { save("panHeartIndex", panHeartIndex); syncRenderState() } }
 	@Published var panClockIndex: Int = 0 { didSet { save("panClockIndex", panClockIndex); syncRenderState() } }
@@ -323,6 +324,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var alarmCrossfadeDuration: TimeInterval = 60.0 { didSet { save("alarmCrossfadeDuration", alarmCrossfadeDuration) } }
 	private var wasPlayingBeforeInterruption = false
 	private var wasAlarmRingingBeforeInterruption = false
+	private var wasPlayingBeforeMorningFade = false
 	private var suppressRemotePauseUntil = Date.distantPast
 	private var headphoneRemovalFadeTimer: Timer?
 	private var headphoneRemovalSilentMode = false
@@ -365,6 +367,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var realExhaleBuffer = [Float]()
 	private var clickBuffer = [Float]()
 	private var clickSoftBuffer = [Float]()
+	private var organicHeartbeatBuffer = [Float]()
+	private var organicHeartbeatPlayIdx: Int = Int.max
 
 	private var nNoise = 0
 	private var frameIdx = 0
@@ -422,7 +426,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.clickVolume = ud.double(forKey: "clickVolume")
 		self.binauralVolume = ud.double(forKey: "binauralVolume")
 		self.rainVolume = ud.double(forKey: "rainVolume")
-		self.organicHeartbeatVolume = ud.double(forKey: "organicHeartbeatVolume")
 
 		self.panHeartIndex = ud.integer(forKey: "panHeartIndex")
 		self.panClockIndex = ud.integer(forKey: "panClockIndex")
@@ -492,6 +495,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		realExhaleBuffer = loadWAV(filename: "REAL_EXHALE")
 		clickBuffer = loadWAV(filename: "CLICK")
 		clickSoftBuffer = loadWAV(filename: "CLICK_SOFT")
+		organicHeartbeatBuffer = loadWAV(filename: "HEARTBEAT")
 
 		setupAudio()
 
@@ -568,6 +572,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		newState.soundscapeMultiplier = Float(self.dynamicVolumeMultiplier * self.meditationFadeMultiplier * self.morningFadeMultiplier)
 		newState.isPlaying = self.isPlaying
 		newState.enableNaturalAcousticHeart = self.enableNaturalAcousticHeart
+		newState.isOrganic = self.profiles[self.selectedProfileIndex].isOrganic ?? false
 		self.renderState = newState
 	}
 
@@ -676,13 +681,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					let loops = Int(ceil(durationInSeconds / fileLength)) + 5
 					for _ in 0..<loops { rNode.scheduleFile(rFile, at: nil, completionHandler: nil) }
 					rNode.play()
-				}
-				
-				if let hNode = exporter.organicHeartbeatPlayerNode, let hFile = exporter.organicHeartbeatAudioFile {
-					let fileLength = Double(hFile.length) / hFile.fileFormat.sampleRate
-					let loops = Int(ceil(durationInSeconds / fileLength)) + 5
-					for _ in 0..<loops { hNode.scheduleFile(hFile, at: nil, completionHandler: nil) }
-					hNode.play()
 				}
 				
 				for track in exporter.importedTracks {
@@ -852,9 +850,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
 
-		let targetOrgVol = Float(organicHeartbeatVolume * masterVolume * 2.5) * soundscapeMultiplier
-		organicHeartbeatPlayerNode?.volume = targetOrgVol
-
 		importedMixer.outputVolume = 1.0
 
 		let baseVoiceVol = Float(masterVolume) * soundscapeMultiplier
@@ -884,6 +879,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		clkPlayIdx2 = Int.max
 		clickPlayIdx = Int.max
 		softClickPlayIdx = Int.max
+		organicHeartbeatPlayIdx = Int.max
 		smoothedVHeart = 0.0
 		smoothedVFaceBrush = 0.0
 		smoothedVClock = 0.0
@@ -916,12 +912,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		   let file = try? AVAudioFile(forReading: url) {
 			rainAudioFile = file
 			rainPlayerNode = AVAudioPlayerNode()
-		}
-		
-		if let url = Bundle.main.url(forResource: "HEARTBEAT", withExtension: "wav"),
-		   let file = try? AVAudioFile(forReading: url) {
-			organicHeartbeatAudioFile = file
-			organicHeartbeatPlayerNode = AVAudioPlayerNode()
 		}
 	}
 	
@@ -1391,10 +1381,17 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		if shouldFadeInSoundscape && now >= fadeStart && now < alarmDate {
 			if !isPlaying {
 				startSoundscape(startMuted: true, announcement: nil, includeMeditation: false)
+				wasPlayingBeforeMorningFade = false
+			} else if morningAlarmPhase != .soundscapeFadeIn {
+				wasPlayingBeforeMorningFade = true
 			}
 			morningAlarmPhase = .soundscapeFadeIn
 			dynamicVolumeMultiplier = 1.0
-			morningFadeMultiplier = min(1.0, max(0.0, now.timeIntervalSince(fadeStart) / fadeDuration))
+			if wasPlayingBeforeMorningFade {
+				morningFadeMultiplier = 1.0
+			} else {
+				morningFadeMultiplier = min(1.0, max(0.0, now.timeIntervalSince(fadeStart) / fadeDuration))
+			}
 			alarmFadeMultiplier = 0.0
 			updateSilentBackgroundAudio()
 			return
@@ -1462,6 +1459,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		isAlarmRinging = false
 		morningAlarmPhase = .idle
 		alarmAutomationArmed = false
+		wasPlayingBeforeMorningFade = false
 		updateSilentBackgroundAudio()
 		updateNowPlaying()
 	}
@@ -1484,7 +1482,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		headphoneRemovalFadeTimer?.invalidate()
 		headphoneRemovalFadeTimer = nil
 		rainPlayerNode?.pause()
-		organicHeartbeatPlayerNode?.pause()
 		for track in importedTracks { track.pause() }
 		meditationItems.forEach { $0.avPlayer?.pause() }
 		meditationPlayerNode.pause()
@@ -1799,6 +1796,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let isDub = previousTBeat < config.dubDelay && t >= config.dubDelay
 				if isDub { DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) } }
 
+				if state.isOrganic {
+					if self.organicHeartbeatPlayIdx < organicHeartbeatBuffer.count {
+						let sample = organicHeartbeatBuffer[self.organicHeartbeatPlayIdx]
+						hL = sample; hR = sample
+						self.organicHeartbeatPlayIdx += 1
+					}
+					flowEnv = 0.0
+				} else {
 				let atk = 0.04; let rel = 0.02
 				var lEnv = exp(-config.lubDecay * t); var slEnv = exp(-config.subDecay * t)
 				if t < atk {
@@ -1891,6 +1896,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					hR = (combinedLub + combinedDub) * 0.85
 				}
 				flowEnv = 0.6 + 0.4 * Float(lEnv + dEnv)
+				}
 
 				if !state.syncClick {
 					let halfSec = Int(self.sampleRate / 2.0)
@@ -1917,7 +1923,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let wVol = state.enableNaturalAcousticHeart ? Float(0.0) : Float(config.whooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
-				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart * 2.5)
+				let hbGain: Float = state.isOrganic ? 1.5 : (state.enableNaturalAcousticHeart ? 1.2 : 2.5)
+				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart * hbGain)
 
 				var chunkCL: Float = 0; var chunkCR: Float = 0
 				if vClock > 0 {
@@ -2143,16 +2150,12 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.attach(hspEqNode)
 
 			if let rn = rainPlayerNode { engine.attach(rn) }
-			if let hn = organicHeartbeatPlayerNode { engine.attach(hn) }
 
 			engine.connect(node, to: preReverbMixer, format: format)
 			engine.connect(importedMixer, to: preReverbMixer, format: format)
 
 			if let rn = rainPlayerNode, let rf = rainAudioFile {
-				engine.connect(rn, to: postReverbMixer, format: rf.processingFormat)
-			}
-			if let hn = organicHeartbeatPlayerNode, let hf = organicHeartbeatAudioFile {
-				engine.connect(hn, to: postReverbMixer, format: hf.processingFormat)
+				engine.connect(rn, to: preReverbMixer, format: rf.processingFormat)
 			}
 
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
@@ -2557,9 +2560,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				guard let self = self else { return }
 				guard self.engine.isRunning else { return }
 				scheduleLoop(node: rainPlayerNode, file: rainAudioFile)
-				scheduleLoop(node: organicHeartbeatPlayerNode, file: organicHeartbeatAudioFile)
 				self.rainPlayerNode?.play()
-				self.organicHeartbeatPlayerNode?.play()
 				for track in self.importedTracks { track.play() }
 				if self.isMeditationActive && !self.meditationItems.isEmpty {
 					self.playMeditationTrack(at: self.currentMeditationIndex)
@@ -2612,7 +2613,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		wasPlayingBeforeInterruption = isPlaying
 		wasAlarmRingingBeforeInterruption = isAlarmRinging
 		rainPlayerNode?.pause()
-		organicHeartbeatPlayerNode?.pause()
 		for track in importedTracks { track.pause() }
 		meditationItems.forEach { $0.avPlayer?.pause() }
 		meditationPlayerNode.pause()
@@ -2628,7 +2628,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					try engine.start()
 				}
 				rainPlayerNode?.play()
-				organicHeartbeatPlayerNode?.play()
 				for track in importedTracks { track.play() }
 				if isMeditationActive && !meditationItems.isEmpty {
 					playMeditationTrack(at: currentMeditationIndex)
@@ -2684,7 +2683,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					try engine.start()
 				}
 				rainPlayerNode?.play()
-				organicHeartbeatPlayerNode?.play()
 				for track in importedTracks { track.play() }
 				if isMeditationActive && !meditationItems.isEmpty {
 					playMeditationTrack(at: currentMeditationIndex)
@@ -2739,7 +2737,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				do {
 					try self.engine.start()
 					self.rainPlayerNode?.play()
-					self.organicHeartbeatPlayerNode?.play()
 					for track in self.importedTracks { track.play() }
 					if self.isMeditationActive && !self.meditationItems.isEmpty {
 						self.playMeditationTrack(at: self.currentMeditationIndex)
@@ -2817,10 +2814,6 @@ struct SoundscapeView: View {
 					VStack(alignment: .leading) {
 						Text("Rain Volume").accessibilityHidden(true)
 						Slider(value: $engine.rainVolume, in: 0...1).accessibilityLabel("Rain Volume")
-					}
-					VStack(alignment: .leading) {
-						Text("Organic Heartbeat Volume").accessibilityHidden(true)
-						Slider(value: $engine.organicHeartbeatVolume, in: 0...1).accessibilityLabel("Organic Heartbeat Volume")
 					}
 				}
 				Section(header: Text("Imported Audio")) {
