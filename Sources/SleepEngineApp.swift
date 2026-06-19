@@ -498,6 +498,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		organicHeartbeatBuffer = loadWAV(filename: "HEARTBEAT")
 
 		setupAudio()
+		updateReverb()
 
 		loadTracks()
 		loadMeditationTracks()
@@ -1764,6 +1765,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					self.tBeat -= beatDuration
 					self.beatCounter += 1
 					self.clkPlayIdx = 0
+					self.organicHeartbeatPlayIdx = 0
 
 					if state.syncClick {
 						if state.clickPatternIndex == 0 {
