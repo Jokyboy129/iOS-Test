@@ -151,6 +151,7 @@ struct MeditationItem {
 }
 
 class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
+	static let shared = AudioEngineManager()
 	private enum MorningAlarmPhase {
 		case idle
 		case waiting
@@ -312,6 +313,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var syncBreathing: Bool = false { didSet { save("syncBreathing", syncBreathing); syncRenderState() } }
 	@Published var isBreathing: Bool = false { didSet { syncRenderState() } }
 	@Published var manualBreathState: Int = 0 { didSet { syncRenderState() } }
+	@Published var customInhale: Int = 4 { didSet { save("customInhale", customInhale) } }
+	@Published var customHold1: Int = 4 { didSet { save("customHold1", customHold1) } }
+	@Published var customExhale: Int = 4 { didSet { save("customExhale", customExhale) } }
+	@Published var customHold2: Int = 4 { didSet { save("customHold2", customHold2) } }
 
 	@Published var savedTracksJSON: Data = Data() { didSet { save("savedTracksJSON", savedTracksJSON) } }
 
@@ -494,6 +499,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.slowdownMinutes = ud.object(forKey: "slowdownMinutes") == nil ? 30.0 : ud.double(forKey: "slowdownMinutes")
 
 		self.syncBreathing = ud.bool(forKey: "syncBreathing")
+		self.customInhale = ud.object(forKey: "customInhale") == nil ? 4 : ud.integer(forKey: "customInhale")
+		self.customHold1 = ud.object(forKey: "customHold1") == nil ? 4 : ud.integer(forKey: "customHold1")
+		self.customExhale = ud.object(forKey: "customExhale") == nil ? 4 : ud.integer(forKey: "customExhale")
+		self.customHold2 = ud.object(forKey: "customHold2") == nil ? 4 : ud.integer(forKey: "customHold2")
 		self.savedTracksJSON = ud.data(forKey: "savedTracksJSON") ?? Data()
 
 		self.enableSleepTimer = ud.bool(forKey: "enableSleepTimer")
@@ -1992,7 +2001,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let wVol = state.enableNaturalAcousticHeart ? Float(0.0) : Float(activeWhooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
-				let hbGain: Float = state.isOrganic ? 1.5 : (state.enableNaturalAcousticHeart ? 1.2 : 2.5)
+				let hbGain: Float = state.isOrganic ? 1.5 : (state.enableNaturalAcousticHeart ? 4.0 : 2.5)
 				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart * hbGain)
 
 				var chunkCL: Float = 0; var chunkCR: Float = 0
@@ -2964,7 +2973,7 @@ struct GeneratorView: View {
 				Button(action: { showingHeartRateSync = true }) {
 					HStack {
 						Image(systemName: "heart.fill").foregroundColor(.red)
-						Text(engine.enableCustomBPM ? "Synced: \(Int(engine.customBPM)) BPM (Tap to re-sync)" : "Sync with my heart rate")
+						Text(engine.enableCustomBPM ? String(localized: "Synced: \(Int(engine.customBPM)) BPM (Tap to re-sync)") : String(localized: "Sync with my heart rate"))
 					}
 				}
 				.accessibilityHint("Uses the camera to measure your real heart rate and sync the heartbeat to it.")
@@ -3167,15 +3176,34 @@ struct BreathingView: View {
 				}
 
 			if !engine.syncBreathing {
-				HStack(spacing: 20) {
-					Button("4-7-8 Relax") { engine.startBreathingExercise(inhale: 4, hold1: 7, exhale: 8, hold2: 0) }
-						.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
-					Button("Box Breathing") { engine.startBreathingExercise(inhale: 4, hold1: 4, exhale: 4, hold2: 4) }
-						.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
-				}
-				if engine.isBreathing {
-					Button("Stop Exercise") { engine.stopBreathingExercise() }
-						.foregroundColor(.red).padding(.top, 20)
+				VStack(spacing: 20) {
+					HStack(spacing: 20) {
+						Button("4-7-8 Relax") { engine.startBreathingExercise(inhale: 4, hold1: 7, exhale: 8, hold2: 0) }
+							.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
+						Button("Box Breathing") { engine.startBreathingExercise(inhale: 4, hold1: 4, exhale: 4, hold2: 4) }
+							.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
+					}
+					
+					VStack(spacing: 10) {
+						Text("Custom Breathing")
+							.font(.headline)
+						HStack {
+							VStack { Text("In"); Stepper("\(engine.customInhale)s", value: $engine.customInhale, in: 1...20).labelsHidden() }
+							VStack { Text("Hold"); Stepper("\(engine.customHold1)s", value: $engine.customHold1, in: 0...20).labelsHidden() }
+							VStack { Text("Out"); Stepper("\(engine.customExhale)s", value: $engine.customExhale, in: 1...20).labelsHidden() }
+							VStack { Text("Hold"); Stepper("\(engine.customHold2)s", value: $engine.customHold2, in: 0...20).labelsHidden() }
+						}
+						Button("Start Custom") { engine.startBreathingExercise(inhale: engine.customInhale, hold1: engine.customHold1, exhale: engine.customExhale, hold2: engine.customHold2) }
+							.buttonStyle(.borderedProminent).disabled(engine.isBreathing)
+					}
+					.padding()
+					.background(Color(UIColor.secondarySystemBackground))
+					.cornerRadius(10)
+					
+					if engine.isBreathing {
+						Button("Stop Exercise") { engine.stopBreathingExercise() }
+							.foregroundColor(.red)
+					}
 				}
 			} else {
 				Text("Manual exercises are disabled because breathing is actively bound to the heartbeat BPM.")
@@ -3486,7 +3514,7 @@ struct SettingsView: View {
 
 
 struct ContentView: View {
-	@StateObject var engine = AudioEngineManager()
+	@StateObject var engine = AudioEngineManager.shared
 	@State private var selectedTab = 0
 
 	var body: some View {

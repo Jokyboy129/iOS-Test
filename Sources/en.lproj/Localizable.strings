@@ -187,3 +187,26 @@
 
 "Alarm Fade Duration: %lld seconds" = "Alarm Fade Duration: %lld seconds";
 "Simulate Morning Fade-In" = "Simulate Morning Fade-In";
+/* Missing Heartrate & Heartbeat strings */
+"Sync with my heart rate" = "Sync with my heart rate";
+"Synced: %lld BPM (Tap to re-sync)" = "Synced: %lld BPM (Tap to re-sync)";
+"Camera Heart Rate Sync" = "Camera Heart Rate Sync";
+"Put your finger over the main camera lens (usually the top or bottom left lens on the back, closest to the flash). Make sure you also cover the flashlight so the light illuminates your finger." = "Put your finger over the main camera lens (usually the top or bottom left lens on the back, closest to the flash). Make sure you also cover the flashlight so the light illuminates your finger.";
+"Detecting pulse..." = "Detecting pulse...";
+"%lld BPM" = "%lld BPM";
+"Use This Heart Rate" = "Use This Heart Rate";
+"Scale break when heart rate slows" = "Scale break when heart rate slows";
+"Organic Acoustic Heartbeat (51 BPM)" = "Organic Acoustic Heartbeat (51 BPM)";
+"Uses the camera to measure your real heart rate and sync the heartbeat to it." = "Uses the camera to measure your real heart rate and sync the heartbeat to it.";
+"Custom Breathing" = "Custom Breathing";
+"In" = "In";
+"Hold" = "Hold";
+"Out" = "Out";
+"Start Custom" = "Start Custom";
+
+/* Siri App Shortcuts */
+"Start Sleep Engine" = "Start Sleep Engine";
+"Play sounds with \(.applicationName)" = "Play sounds with \(.applicationName)";
+"Start my soundscape in \(.applicationName)" = "Start my soundscape in \(.applicationName)";
+"Play Sleep Engine" = "Play Sleep Engine";
+
