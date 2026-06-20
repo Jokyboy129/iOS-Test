@@ -140,6 +140,8 @@ struct AudioRenderState {
 	var scaleDubDelayWithHeartRate: Bool = false
 	var syncClockTarget: Int = 0
 	var syncClickTarget: Int = 0
+	var enableCustomBPM: Bool = false
+	var customBPM: Double = 60.0
 }
 
 struct MeditationItem {
@@ -285,6 +287,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var scaleDubDelayWithHeartRate: Bool = false { didSet { save("scaleDubDelayWithHeartRate", scaleDubDelayWithHeartRate); syncRenderState() } }
 	@Published var syncClockTarget: Int = 0 { didSet { save("syncClockTarget", syncClockTarget); syncRenderState() } }
 	@Published var syncClickTarget: Int = 0 { didSet { save("syncClickTarget", syncClickTarget); syncRenderState() } }
+
+	@Published var enableCustomBPM: Bool = false { didSet { save("enableCustomBPM", enableCustomBPM); resetDynamicBPM(); syncRenderState() } }
+	@Published var customBPM: Double = 60.0 { didSet { save("customBPM", customBPM); resetDynamicBPM(); syncRenderState() } }
 
 	@Published var mixWithOthers: Bool = false { didSet { save("mixWithOthers", mixWithOthers); applyAudioSessionSettings() } }
 	@Published var fadeToSilentOnHeadphoneRemoval: Bool = false { didSet { save("fadeToSilentOnHeadphoneRemoval", fadeToSilentOnHeadphoneRemoval) } }
@@ -466,6 +471,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.syncClockTarget = ud.integer(forKey: "syncClockTarget")
 		self.syncClickTarget = ud.integer(forKey: "syncClickTarget")
 
+		self.enableCustomBPM = ud.bool(forKey: "enableCustomBPM")
+		self.customBPM = ud.object(forKey: "customBPM") == nil ? 60.0 : ud.double(forKey: "customBPM")
+
 		self.mixWithOthers = ud.bool(forKey: "mixWithOthers")
 		self.fadeToSilentOnHeadphoneRemoval = ud.bool(forKey: "fadeToSilentOnHeadphoneRemoval")
 		self.useWhisper = ud.bool(forKey: "useWhisper")
@@ -604,6 +612,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		newState.scaleDubDelayWithHeartRate = self.scaleDubDelayWithHeartRate
 		newState.syncClockTarget = self.syncClockTarget
 		newState.syncClickTarget = self.syncClickTarget
+		newState.enableCustomBPM = self.enableCustomBPM
+		newState.customBPM = self.customBPM
 		self.renderState = newState
 	}
 
@@ -901,7 +911,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	}
 
 	private func resetDynamicBPM() {
-		currentDynamicBPM = profiles[selectedProfileIndex].bpm
+		currentDynamicBPM = enableCustomBPM ? customBPM : profiles[selectedProfileIndex].bpm
 		startBPM = currentDynamicBPM
 		if targetBPM > startBPM { targetBPM = startBPM }
 		tBeat = 0
