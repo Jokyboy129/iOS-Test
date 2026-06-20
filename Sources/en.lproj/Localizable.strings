@@ -206,7 +206,7 @@
 
 /* Siri App Shortcuts */
 "Start Sleep Engine" = "Start Sleep Engine";
-"Play sounds with \(.applicationName)" = "Play sounds with \(.applicationName)";
-"Start my soundscape in \(.applicationName)" = "Start my soundscape in \(.applicationName)";
+"Play sounds with ${applicationName}" = "Play sounds with ${applicationName}";
+"Start my soundscape in ${applicationName}" = "Start my soundscape in ${applicationName}";
 "Play Sleep Engine" = "Play Sleep Engine";
 
