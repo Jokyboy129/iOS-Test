@@ -20,18 +20,16 @@ struct StartSleepEngineIntent: AppIntent {
 @available(iOS 16.0, *)
 struct SleepEngineShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        return [
-            AppShortcut(
-                intent: StartSleepEngineIntent(),
-                phrases: [
-                    "Start \(.applicationName)",
-                    "Play sounds with \(.applicationName)",
-                    "Start my soundscape in \(.applicationName)",
-                    "Play \(.applicationName)"
-                ],
-                shortTitle: "Start Sleep Engine",
-                systemImageName: "play.fill"
-            )
-        ]
+        AppShortcut(
+            intent: StartSleepEngineIntent(),
+            phrases: [
+                "Start \(.applicationName)",
+                "Play sounds with \(.applicationName)",
+                "Start my soundscape in \(.applicationName)",
+                "Play \(.applicationName)"
+            ],
+            shortTitle: "Start Sleep Engine",
+            systemImageName: "play.fill"
+        )
     }
 }
