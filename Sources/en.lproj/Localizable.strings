@@ -205,8 +205,8 @@
 "Start Custom" = "Start Custom";
 
 /* Siri App Shortcuts */
-"Start Sleep Engine" = "Start Sleep Engine";
+"Start ${applicationName}" = "Start ${applicationName}";
 "Play sounds with ${applicationName}" = "Play sounds with ${applicationName}";
 "Start my soundscape in ${applicationName}" = "Start my soundscape in ${applicationName}";
-"Play Sleep Engine" = "Play Sleep Engine";
+"Play ${applicationName}" = "Play ${applicationName}";
 
