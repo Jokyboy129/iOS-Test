@@ -139,13 +139,21 @@ class HeartRateMonitor: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
 			smoothed.append(avg)
 		}
 		
-		let mean = smoothed.reduce(0, +) / Double(smoothed.count)
-		let detrended = smoothed.map { $0 - mean }
+		// Detrend using a local moving average (e.g., 30 frames ~ 1 second) to remove baseline wander
+		var detrended = [Double]()
+		let baselineWindow = 30
+		for i in 0..<smoothed.count {
+			let start = max(0, i - baselineWindow / 2)
+			let end = min(smoothed.count, i + baselineWindow / 2)
+			let localMean = smoothed[start..<end].reduce(0, +) / Double(end - start)
+			detrended.append(smoothed[i] - localMean)
+		}
 		
 		var peaks = 0
 		var inPeak = false
 		for val in detrended {
-			if val > 0 && !inPeak {
+			// Add a small threshold to avoid counting noise as peaks
+			if val > 0.1 && !inPeak {
 				inPeak = true
 				peaks += 1
 			} else if val < 0 {
