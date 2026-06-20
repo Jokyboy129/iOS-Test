@@ -133,6 +133,13 @@ struct AudioRenderState {
 	var isPlaying: Bool = false
 	var enableNaturalAcousticHeart: Bool = false
 	var isOrganic: Bool = false
+	var enableCustomTuning: Bool = false
+	var customDubDelay: Double = 0.3
+	var customWhooshVol: Double = 0.5
+	var customNoiseLpf: Double = 450
+	var scaleDubDelayWithHeartRate: Bool = false
+	var syncClockTarget: Int = 0
+	var syncClickTarget: Int = 0
 }
 
 struct MeditationItem {
@@ -270,6 +277,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var syncClock: Bool = false { didSet { save("syncClock", syncClock); syncRenderState() } }
 	@Published var syncClick: Bool = true { didSet { save("syncClick", syncClick); syncRenderState() } }
 	@Published var enableRSA: Bool = false { didSet { save("enableRSA", enableRSA); syncRenderState() } }
+
+	@Published var enableCustomTuning: Bool = false { didSet { save("enableCustomTuning", enableCustomTuning); syncRenderState() } }
+	@Published var customDubDelay: Double = 0.3 { didSet { save("customDubDelay", customDubDelay); syncRenderState() } }
+	@Published var customWhooshVol: Double = 0.5 { didSet { save("customWhooshVol", customWhooshVol); rebuildPrototypes(); syncRenderState() } }
+	@Published var customNoiseLpf: Double = 450 { didSet { save("customNoiseLpf", customNoiseLpf); rebuildPrototypes(); syncRenderState() } }
+	@Published var scaleDubDelayWithHeartRate: Bool = false { didSet { save("scaleDubDelayWithHeartRate", scaleDubDelayWithHeartRate); syncRenderState() } }
+	@Published var syncClockTarget: Int = 0 { didSet { save("syncClockTarget", syncClockTarget); syncRenderState() } }
+	@Published var syncClickTarget: Int = 0 { didSet { save("syncClickTarget", syncClickTarget); syncRenderState() } }
 
 	@Published var mixWithOthers: Bool = false { didSet { save("mixWithOthers", mixWithOthers); applyAudioSessionSettings() } }
 	@Published var fadeToSilentOnHeadphoneRemoval: Bool = false { didSet { save("fadeToSilentOnHeadphoneRemoval", fadeToSilentOnHeadphoneRemoval) } }
@@ -443,6 +458,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.syncClick = ud.object(forKey: "syncClick") == nil ? true : ud.bool(forKey: "syncClick")
 		self.enableRSA = ud.bool(forKey: "enableRSA")
 
+		self.enableCustomTuning = ud.bool(forKey: "enableCustomTuning")
+		self.customDubDelay = ud.object(forKey: "customDubDelay") == nil ? 0.3 : ud.double(forKey: "customDubDelay")
+		self.customWhooshVol = ud.object(forKey: "customWhooshVol") == nil ? 0.5 : ud.double(forKey: "customWhooshVol")
+		self.customNoiseLpf = ud.object(forKey: "customNoiseLpf") == nil ? 450 : ud.double(forKey: "customNoiseLpf")
+		self.scaleDubDelayWithHeartRate = ud.bool(forKey: "scaleDubDelayWithHeartRate")
+		self.syncClockTarget = ud.integer(forKey: "syncClockTarget")
+		self.syncClickTarget = ud.integer(forKey: "syncClickTarget")
+
 		self.mixWithOthers = ud.bool(forKey: "mixWithOthers")
 		self.fadeToSilentOnHeadphoneRemoval = ud.bool(forKey: "fadeToSilentOnHeadphoneRemoval")
 		self.useWhisper = ud.bool(forKey: "useWhisper")
@@ -574,6 +597,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		newState.isPlaying = self.isPlaying
 		newState.enableNaturalAcousticHeart = self.enableNaturalAcousticHeart
 		newState.isOrganic = self.profiles[self.selectedProfileIndex].isOrganic ?? false
+		newState.enableCustomTuning = self.enableCustomTuning
+		newState.customDubDelay = self.customDubDelay
+		newState.customWhooshVol = self.customWhooshVol
+		newState.customNoiseLpf = self.customNoiseLpf
+		newState.scaleDubDelayWithHeartRate = self.scaleDubDelayWithHeartRate
+		newState.syncClockTarget = self.syncClockTarget
+		newState.syncClickTarget = self.syncClickTarget
 		self.renderState = newState
 	}
 
@@ -1761,13 +1791,24 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let isBeat = self.tBeat >= beatDuration
 				let isHalfBeat = previousTBeat < (beatDuration / 2.0) && self.tBeat >= (beatDuration / 2.0)
 
+				var activeDubDelay = state.enableCustomTuning ? state.customDubDelay : config.dubDelay
+				if state.scaleDubDelayWithHeartRate {
+					let ratio = self.startBPM / actualBPM
+					activeDubDelay *= ratio
+				}
+				let t = self.tBeat
+				let isDub = previousTBeat < activeDubDelay && t >= activeDubDelay
+
 				if isBeat {
 					self.tBeat -= beatDuration
 					self.beatCounter += 1
-					self.clkPlayIdx = 0
 					self.organicHeartbeatPlayIdx = 0
 
-					if state.syncClick {
+					if state.syncClockTarget == 0 {
+						self.clkPlayIdx = 0
+					}
+
+					if state.syncClick && state.syncClickTarget == 0 {
 						if state.clickPatternIndex == 0 {
 							self.clickPlayIdx = 0
 							self.softClickPlayIdx = 0
@@ -1784,8 +1825,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let ticksPerBeat = state.clockTypeIndex == 1 ? 2 : 1
 
 				if isHalfBeat {
-					if ticksPerBeat == 2 { self.clkPlayIdx2 = 0 }
-					if state.syncClick {
+					if ticksPerBeat == 2 && state.syncClockTarget == 0 { self.clkPlayIdx2 = 0 }
+					if state.syncClick && state.syncClickTarget == 0 {
 						if state.clickPatternIndex == 1 {
 							self.softClickPlayIdx = 0
 						} else if state.clickPatternIndex == 2 {
@@ -1794,9 +1835,24 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					}
 				}
 
-				let t = self.tBeat
-				let isDub = previousTBeat < config.dubDelay && t >= config.dubDelay
-				if isDub { DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) } }
+				if isDub {
+					if state.syncClockTarget == 1 {
+						self.clkPlayIdx = 0
+					}
+					if ticksPerBeat == 2 && state.syncClockTarget == 1 { self.clkPlayIdx2 = 0 } // Simulating halfbeat of dub
+
+					if state.syncClick && state.syncClickTarget == 1 {
+						if state.clickPatternIndex == 0 {
+							self.clickPlayIdx = 0
+							self.softClickPlayIdx = 0
+						} else if state.clickPatternIndex == 1 {
+							self.clickPlayIdx = 0
+						} else if state.clickPatternIndex == 2 {
+							self.softClickPlayIdx = 0
+						}
+					}
+					DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) }
+				}
 
 				if state.isOrganic {
 					if self.organicHeartbeatPlayIdx < organicHeartbeatBuffer.count {
@@ -1824,8 +1880,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				var dEnv = 0.0; var sdEnv = 0.0; var subDub = 0.0; var dub = 0.0
-				if t >= config.dubDelay {
-					let tAct = t - config.dubDelay
+				if t >= activeDubDelay {
+					let tAct = t - activeDubDelay
 					dEnv = exp(-config.dubDecay * tAct); sdEnv = exp(-config.subDecay * tAct)
 					if tAct < atk {
 						let attackCurve = pow(sin((Double.pi / 2.0) * tAct / atk), 2)
@@ -1922,7 +1978,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				let idxNoise = currentFrame % nNoise
-				let wVol = state.enableNaturalAcousticHeart ? Float(0.0) : Float(config.whooshVol)
+				let activeWhooshVol = state.enableCustomTuning ? state.customWhooshVol : config.whooshVol
+				let wVol = state.enableNaturalAcousticHeart ? Float(0.0) : Float(activeWhooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
 				let hbGain: Float = state.isOrganic ? 1.5 : (state.enableNaturalAcousticHeart ? 1.2 : 2.5)
@@ -2394,7 +2451,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			breathL = generateSeamlessNoise(length: nNoise, lpfFreq: 600); breathR = generateSeamlessNoise(length: nNoise, lpfFreq: 600)
 		}
 		whiteL = generateWhiteNoise(length: nNoise); whiteR = generateWhiteNoise(length: nNoise)
-		whooshL = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf); whooshR = generateSeamlessNoise(length: nNoise, lpfFreq: config.noiseLpf)
+		let activeNoiseLpf = enableCustomTuning ? customNoiseLpf : config.noiseLpf
+		whooshL = generateSeamlessNoise(length: nNoise, lpfFreq: activeNoiseLpf); whooshR = generateSeamlessNoise(length: nNoise, lpfFreq: activeNoiseLpf)
 
 		// Synthesize continuous sweeping Gentle Face Brush (16 seconds loop of 4-second sweeps with randomized panning)
 		let nFaceBrush = Int(sampleRate * 16.0)
@@ -2855,6 +2913,7 @@ struct SoundscapeView: View {
 
 struct GeneratorView: View {
 	@ObservedObject var engine: AudioEngineManager
+	@State private var showingHeartRateSync = false
 	var body: some View {
 		Form {
 			Section(header: Text("Base Speed & Tone Profile").accessibilityHidden(true)) {
@@ -2864,9 +2923,57 @@ struct GeneratorView: View {
 					}
 				}
 				.pickerStyle(MenuPickerStyle())
+
+				Toggle("Enable Custom Tuning", isOn: $engine.enableCustomTuning)
+					.accessibilityHint("Overrides the selected profile with your own custom break and blood flow parameters.")
+
+				if engine.enableCustomTuning {
+					VStack(alignment: .leading) {
+						Text("Break Between Lub & Dub (Seconds)")
+						Slider(value: $engine.customDubDelay, in: 0.1...0.8, step: 0.01)
+							.accessibilityLabel("Break Between Lub and Dub")
+							.accessibilityValue("\(String(format: "%.2f", engine.customDubDelay)) seconds")
+						Toggle("Scale break when heart rate slows", isOn: $engine.scaleDubDelayWithHeartRate)
+					}.padding(.top, 4)
+
+					VStack(alignment: .leading) {
+						Text("Blood Flow Volume (Whoosh)")
+						Slider(value: $engine.customWhooshVol, in: 0.0...1.0)
+							.accessibilityLabel("Blood Flow Volume")
+					}.padding(.top, 4)
+
+					VStack(alignment: .leading) {
+						Text("Blood Flow Tone (Filter)")
+						Slider(value: $engine.customNoiseLpf, in: 100...1500)
+							.accessibilityLabel("Blood Flow Tone")
+					}.padding(.top, 4)
+				}
 			}
 
 			Section(header: Text("Heartbeat Dynamics").accessibilityHidden(true)) {
+				Button(action: { showingHeartRateSync = true }) {
+					HStack {
+						Image(systemName: "heart.fill").foregroundColor(.red)
+						Text(engine.enableCustomBPM ? "Synced: \(Int(engine.customBPM)) BPM (Tap to re-sync)" : "Sync with my heart rate")
+					}
+				}
+				.accessibilityHint("Uses the camera to measure your real heart rate and sync the heartbeat to it.")
+				.sheet(isPresented: $showingHeartRateSync) {
+					CameraHeartRateMonitorView(
+						isPresented: $showingHeartRateSync,
+						enableCustomBPM: $engine.enableCustomBPM,
+						customBPM: $engine.customBPM,
+						enableSlowdown: $engine.enableSlowdown,
+						targetBPM: $engine.targetBPM
+					)
+				}
+				if engine.enableCustomBPM {
+					Button("Reset to Profile Default BPM") {
+						engine.enableCustomBPM = false
+					}
+					.foregroundColor(.red)
+				}
+
 				Toggle("Fluid Slow Down Over Time", isOn: $engine.enableSlowdown)
 				if engine.enableSlowdown {
 					let maxBPM = engine.profiles[engine.selectedProfileIndex].bpm
@@ -2902,6 +3009,14 @@ struct GeneratorView: View {
 					}
 					.pickerStyle(MenuPickerStyle())
 					Toggle("Sync to Heartbeat", isOn: $engine.syncClock)
+					if engine.syncClock {
+						Picker("Sync Clock With", selection: $engine.syncClockTarget) {
+							Text("Lub (First Beat)").tag(0)
+							Text("Dub (Second Beat)").tag(1)
+						}
+						.pickerStyle(SegmentedPickerStyle())
+						.accessibilityLabel("Clock Sync Target")
+					}
 				}.padding(.vertical, 4)
 
 				VStack(alignment: .leading) {
@@ -2921,6 +3036,14 @@ struct GeneratorView: View {
 					.pickerStyle(MenuPickerStyle())
 
 					Toggle("Sync to Heartbeat", isOn: $engine.syncClick)
+					if engine.syncClick {
+						Picker("Sync Clicks With", selection: $engine.syncClickTarget) {
+							Text("Lub (First Beat)").tag(0)
+							Text("Dub (Second Beat)").tag(1)
+						}
+						.pickerStyle(SegmentedPickerStyle())
+						.accessibilityLabel("Click Sync Target")
+					}
 				}.padding(.vertical, 4)
 
 				VStack(alignment: .leading) {
