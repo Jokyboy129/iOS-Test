@@ -11,7 +11,7 @@ struct StartSleepEngineIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let engine = AudioEngineManager.shared
         if !engine.isPlaying {
-            engine.play()
+            engine.playStop()
         }
         return .result()
     }
