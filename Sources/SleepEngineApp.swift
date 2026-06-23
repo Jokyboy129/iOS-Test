@@ -1827,13 +1827,19 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						self.clkPlayIdx = 0
 					}
 
-					if state.syncClick && state.syncClickTarget == 0 {
-						if state.clickPatternIndex == 0 {
+					if state.syncClick {
+						if state.syncClickTarget == 0 || state.syncClickTarget == 2 {
+							if state.clickPatternIndex == 0 {
+								self.clickPlayIdx = 0
+								self.softClickPlayIdx = 0
+							} else if state.clickPatternIndex == 1 {
+								self.clickPlayIdx = 0
+							} else if state.clickPatternIndex == 2 {
+								self.softClickPlayIdx = 0
+							}
+						} else if state.syncClickTarget == 3 {
 							self.clickPlayIdx = 0
-							self.softClickPlayIdx = 0
-						} else if state.clickPatternIndex == 1 {
-							self.clickPlayIdx = 0
-						} else if state.clickPatternIndex == 2 {
+						} else if state.syncClickTarget == 4 {
 							self.softClickPlayIdx = 0
 						}
 					}
@@ -1845,7 +1851,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 				if isHalfBeat {
 					if ticksPerBeat == 2 && state.syncClockTarget == 0 { self.clkPlayIdx2 = 0 }
-					if state.syncClick && state.syncClickTarget == 0 {
+					if state.syncClick && (state.syncClickTarget == 0 || state.syncClickTarget == 2) {
 						if state.clickPatternIndex == 1 {
 							self.softClickPlayIdx = 0
 						} else if state.clickPatternIndex == 2 {
@@ -1860,14 +1866,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					}
 					if ticksPerBeat == 2 && state.syncClockTarget == 1 { self.clkPlayIdx2 = 0 } // Simulating halfbeat of dub
 
-					if state.syncClick && state.syncClickTarget == 1 {
-						if state.clickPatternIndex == 0 {
-							self.clickPlayIdx = 0
+					if state.syncClick {
+						if state.syncClickTarget == 1 || state.syncClickTarget == 2 {
+							if state.clickPatternIndex == 0 {
+								self.clickPlayIdx = 0
+								self.softClickPlayIdx = 0
+							} else if state.clickPatternIndex == 1 {
+								self.clickPlayIdx = 0
+							} else if state.clickPatternIndex == 2 {
+								self.softClickPlayIdx = 0
+							}
+						} else if state.syncClickTarget == 3 {
 							self.softClickPlayIdx = 0
-						} else if state.clickPatternIndex == 1 {
+						} else if state.syncClickTarget == 4 {
 							self.clickPlayIdx = 0
-						} else if state.clickPatternIndex == 2 {
-							self.softClickPlayIdx = 0
 						}
 					}
 					DispatchQueue.main.async { self.triggerCustomHeartbeatHaptic(isLub: false) }
@@ -3059,8 +3071,11 @@ struct GeneratorView: View {
 						Picker("Sync Clicks With", selection: $engine.syncClickTarget) {
 							Text("Lub (First Beat)").tag(0)
 							Text("Dub (Second Beat)").tag(1)
+							Text("Both (Lub & Dub)").tag(2)
+							Text("Click on Lub, Soft on Dub").tag(3)
+							Text("Soft on Lub, Click on Dub").tag(4)
 						}
-						.pickerStyle(SegmentedPickerStyle())
+						.pickerStyle(MenuPickerStyle())
 						.accessibilityLabel("Click Sync Target")
 					}
 				}.padding(.vertical, 4)
