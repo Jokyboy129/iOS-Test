@@ -2991,9 +2991,9 @@ struct SoundscapeView: View {
 				}
 			}
 			.sheet(isPresented: $showingTidalSearch) {
-				TidalSearchView { track in
+				TidalSearchView(onTrackSelected: { track in
 					engine.addTidalTrack(trackInfo: track, isMeditation: false)
-				}
+				})
 			}
 		}
 	}
@@ -3399,9 +3399,9 @@ struct SleepTimerView: View {
 				}
 			}
 			.sheet(isPresented: $showingTidalSearch) {
-				TidalSearchView { track in
+				TidalSearchView(onTrackSelected: { track in
 					engine.addTidalTrack(trackInfo: track, isMeditation: true)
-				}
+				})
 			}
 			.sheet(isPresented: $showingAlarmMusicPicker) {
 				MediaPicker(isPresented: $showingAlarmMusicPicker) { items in

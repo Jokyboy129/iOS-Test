@@ -67,7 +67,7 @@ class TidalManager: NSObject, ObservableObject, PlayerListener {
     func setupPlayer() {
         guard player == nil else { return }
         player = Player.bootstrap(
-            listener: self,
+            playerListener: self,
             credentialsProvider: TidalAuth.shared,
             eventSender: TidalEventSender.shared
         )
