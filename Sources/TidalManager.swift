@@ -37,7 +37,7 @@ class TidalManager: NSObject, ObservableObject, PlayerListener {
     }
     
     func checkAuthStatus() {
-        isAuthenticated = TidalAuth.shared.isUserLoggedIn()
+        isAuthenticated = TidalAuth.shared.isUserLoggedIn
     }
     
     func login(presentationContextProvider: ASWebAuthenticationPresentationContextProviding) {
@@ -86,33 +86,54 @@ class TidalManager: NSObject, ObservableObject, PlayerListener {
     
     func searchTracks(query: String) {
         // We need an access token to search.
-        // TidalAuth.shared.getCredentials() returns current credentials.
-        // This is a simplified search assuming we can get the token.
-        guard let token = TidalAuth.shared.getCredentials()?.accessToken else { return }
-        
-        let urlStr = "https://openapi.tidal.com/v2/search?query=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&type=tracks&countryCode=US"
-        guard let url = URL(string: urlStr) else { return }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/vnd.tidal.v1+json", forHTTPHeaderField: "accept")
-        
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            guard let data = data, error == nil else { return }
-            // Parse JSON response. Simplified struct matching.
-            // Tidal API v2 returns complex JSON.
-            // For now, we will just parse an empty list if it fails.
-            DispatchQueue.main.async {
-                // Implementation of JSON parsing goes here.
-                // self.searchResults = parsedTracks
+        Task {
+            do {
+                let credentials = try await TidalAuth.shared.getCredentials(apiErrorSubStatus: nil)
+                guard let token = credentials.token else { return }
+                
+                let urlStr = "https://openapi.tidal.com/v2/search?query=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&type=tracks&countryCode=US"
+                guard let url = URL(string: urlStr) else { return }
+                
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/vnd.tidal.v1+json", forHTTPHeaderField: "accept")
+                
+                URLSession.shared.dataTask(with: request) { data, _, error in
+                    guard let data = data, error == nil else { return }
+                    // Parse JSON response. Simplified struct matching.
+                    // Tidal API v2 returns complex JSON.
+                    // For now, we will just parse an empty list if it fails.
+                    DispatchQueue.main.async {
+                        // Implementation of JSON parsing goes here.
+                        // self.searchResults = parsedTracks
+                    }
+                }.resume()
+            } catch {
+                print("Tidal search failed: \(error)")
             }
-        }.resume()
+        }
     }
     
     // MARK: - PlayerListener
     func stateChanged(to state: Player.State) {
         print("Tidal player state: \(state)")
+    }
+    
+    func ended(_ mediaProduct: MediaProduct) {
+        print("Tidal player ended track")
+    }
+    
+    func mediaTransitioned(to mediaProduct: MediaProduct, with playbackContext: PlaybackContext) {
+        print("Tidal player transitioned")
+    }
+    
+    func failed(with error: PlayerError) {
+        print("Tidal player failed: \(error)")
+    }
+    
+    func mediaServicesWereReset() {
+        print("Tidal player media services were reset")
     }
 }
 
