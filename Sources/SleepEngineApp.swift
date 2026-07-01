@@ -85,7 +85,7 @@ class ImportedTrack: Identifiable, ObservableObject {
 
 	func play() {
 		if isTidal {
-			TidalManager.shared.playTrack(id: path)
+			TidalManager.shared.playMedia(path: path)
 			return
 		}
 		avPlayer?.play()
@@ -1137,15 +1137,16 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 	}
 
-	func addTidalTrack(trackInfo: TidalTrack, isMeditation: Bool = false) {
+	func addTidalTrack(trackInfo: TidalMediaItem, isMeditation: Bool = false) {
+		let fullPath = trackInfo.type == .album ? "album:\(trackInfo.id)" : trackInfo.id
 		if isMeditation {
-			meditationPaths = [trackInfo.id]
+			meditationPaths = [fullPath]
 			meditationIsAppleMusic = false
 			meditationIsTidal = true
 			meditationNameStorage = trackInfo.title
 			loadMeditationTracks()
 		} else {
-			let track = ImportedTrack(name: trackInfo.title, volume: 0.5, isAppleMusic: false, isTidal: true, path: trackInfo.id)
+			let track = ImportedTrack(name: trackInfo.title, volume: 0.5, isAppleMusic: false, isTidal: true, path: fullPath)
 			track.masterVolume = masterVolume
 			if isPlaying { track.play() }
 			importedTracks.append(track)
@@ -1362,7 +1363,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 		
 		if meditationIsTidal, let path = meditationPaths.first {
-			TidalManager.shared.playTrack(id: path)
+			TidalManager.shared.playMedia(path: path)
 			return
 		}
 

@@ -4,47 +4,100 @@ import AuthenticationServices
 struct TidalSearchView: View {
     @ObservedObject var tidalManager = TidalManager.shared
     @State private var searchQuery = ""
+    @State private var searchAlbums = false
     @Environment(\.presentationMode) var presentationMode
     
-    var onTrackSelected: ((TidalTrack) -> Void)?
+    var onItemSelected: ((TidalMediaItem) -> Void)?
     
-    init(onTrackSelected: ((TidalTrack) -> Void)? = nil) {
-        self.onTrackSelected = onTrackSelected
+    init(onItemSelected: ((TidalMediaItem) -> Void)? = nil) {
+        self.onItemSelected = onItemSelected
     }
     
     var body: some View {
         NavigationView {
             VStack {
                 if tidalManager.isAuthenticated {
+                    Picker("Search Type", selection: $searchAlbums) {
+                        Text("Tracks").tag(false)
+                        Text("Albums").tag(true)
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                    .padding(.horizontal)
+                    
                     SearchBar(text: $searchQuery, onSearch: {
-                        tidalManager.searchTracks(query: searchQuery)
+                        tidalManager.search(query: searchQuery, searchAlbums: searchAlbums)
                     })
                     
-                    List(tidalManager.searchResults) { track in
+                    List(tidalManager.searchResults) { item in
                         Button(action: {
-                            onTrackSelected?(track)
+                            onItemSelected?(item)
                             presentationMode.wrappedValue.dismiss()
                         }) {
-                            VStack(alignment: .leading) {
-                                Text(track.title).font(.headline)
-                                Text(track.artist).font(.subheadline).foregroundColor(.secondary)
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(item.title).font(.headline)
+                                    Text(item.artist).font(.subheadline).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if item.type == .album {
+                                    Image(systemName: "square.stack")
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Image(systemName: "music.note")
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
                     }
                 } else {
-                    Text("You must connect to TIDAL first.")
+                    if let userCode = tidalManager.loginUserCode, let uri = tidalManager.loginUri, let url = URL(string: uri) {
+                        VStack(spacing: 20) {
+                            Text("Please log in to TIDAL")
+                                .font(.headline)
+                            
+                            Text("Visit the link below and enter this code:")
+                                .multilineTextAlignment(.center)
+                            
+                            Text(userCode)
+                                .font(.system(size: 32, weight: .bold, design: .monospaced))
+                                .padding()
+                                .background(Color.gray.opacity(0.2))
+                                .cornerRadius(8)
+                            
+                            Link("Open Login Page", destination: url)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                            
+                            ProgressView("Waiting for authorization...")
+                                .padding(.top)
+                        }
                         .padding()
-                    Button("Connect to TIDAL") {
-                        // Assuming LoginView or Web context provider is handled in App or here
-                        // For simplicity, we just trigger login
-                        // In a real app we would pass an ASWebAuthenticationPresentationContextProviding
-                        // which we will just mock for now as this is a personal app.
-                        tidalManager.isAuthenticated = true // Mocking successful login for the UI test
+                    } else if tidalManager.isLoggingIn {
+                        ProgressView("Initializing login...")
+                            .padding()
+                    } else {
+                        VStack(spacing: 16) {
+                            Text("You must connect to TIDAL first.")
+                                .padding()
+                            
+                            Button("Connect to TIDAL") {
+                                tidalManager.login()
+                            }
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                            
+                            if let error = tidalManager.loginError {
+                                Text(error)
+                                    .foregroundColor(.red)
+                                    .multilineTextAlignment(.center)
+                                    .padding()
+                            }
+                        }
                     }
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
                 }
             }
             .navigationTitle("Search TIDAL")
