@@ -8,6 +8,10 @@ struct TidalSearchView: View {
     
     var onTrackSelected: ((TidalTrack) -> Void)?
     
+    init(onTrackSelected: ((TidalTrack) -> Void)? = nil) {
+        self.onTrackSelected = onTrackSelected
+    }
+    
     var body: some View {
         NavigationView {
             VStack {

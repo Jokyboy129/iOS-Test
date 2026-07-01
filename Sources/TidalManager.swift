@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import Auth
 import Player
 import EventProducer
@@ -116,7 +117,7 @@ class TidalManager: NSObject, ObservableObject, PlayerListener {
     }
     
     // MARK: - PlayerListener
-    func stateChanged(to state: Player.State) {
+    func stateChanged(to state: State) {
         print("Tidal player state: \(state)")
     }
     
