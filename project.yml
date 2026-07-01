@@ -1,4 +1,8 @@
 name: SleepEngine
+packages:
+  Tidal:
+    url: https://github.com/tidal-music/tidal-sdk-ios
+    branch: main
 options:
   bundleIdPrefix: com.localdev
   developmentLanguage: en
@@ -11,6 +15,13 @@ targets:
     platform: iOS
     deploymentTarget: "15.0"
     sources: [Sources]
+    dependencies:
+      - package: Tidal
+        product: Auth
+      - package: Tidal
+        product: Player
+      - package: Tidal
+        product: EventProducer
     info:
       path: Info.plist
       properties:

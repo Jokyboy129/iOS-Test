@@ -28,6 +28,7 @@ struct TrackData: Codable, Identifiable {
 	var path: String
 	var volume: Double
 	var isAppleMusic: Bool
+	var isTidal: Bool = false
 	var delayAfterMeditation: Bool
 }
 
@@ -42,6 +43,7 @@ class ImportedTrack: Identifiable, ObservableObject {
 	var audioFile: AVAudioFile?
 
 	var isAppleMusic: Bool
+	var isTidal: Bool = false
 	var path: String
 	var masterVolume: Double = 1.0 { didSet { updatePlayerVolume() } }
 	var dynamicVolumeMultiplier: Double = 1.0 { didSet { updatePlayerVolume() } }
@@ -62,11 +64,12 @@ class ImportedTrack: Identifiable, ObservableObject {
 		}
 	}
 
-	init(id: UUID = UUID(), name: String, volume: Double, isAppleMusic: Bool, path: String, delayAfterMeditation: Bool = false) {
+	init(id: UUID = UUID(), name: String, volume: Double, isAppleMusic: Bool, isTidal: Bool = false, path: String, delayAfterMeditation: Bool = false) {
 		self.id = id
 		self.name = name
 		self.volume = volume
 		self.isAppleMusic = isAppleMusic
+		self.isTidal = isTidal
 		self.path = path
 		self.delayAfterMeditation = delayAfterMeditation
 	}
@@ -81,16 +84,28 @@ class ImportedTrack: Identifiable, ObservableObject {
 	}
 
 	func play() {
+		if isTidal {
+			TidalManager.shared.playTrack(id: path)
+			return
+		}
 		avPlayer?.play()
 		enginePlayerNode?.play()
 	}
 
 	func pause() {
+		if isTidal {
+			TidalManager.shared.stop()
+			return
+		}
 		avPlayer?.pause()
 		enginePlayerNode?.pause()
 	}
 
 	func stop() {
+		if isTidal {
+			TidalManager.shared.stop()
+			return
+		}
 		avPlayer?.stop()
 		enginePlayerNode?.stop()
 	}
@@ -356,6 +371,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	@Published var meditationPaths: [String] = [] { didSet { save("meditationPaths", meditationPaths) } }
 	@Published var meditationIsAppleMusic: Bool = false { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
+	@Published var meditationIsTidal: Bool = false { didSet { save("meditationIsTidal", meditationIsTidal) } }
 	@Published var meditationNameStorage: String = "None" { didSet { save("meditationNameStorage", meditationNameStorage) } }
 
 	var isMeditationActive = false
@@ -519,6 +535,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 		self.meditationPaths = ud.stringArray(forKey: "meditationPaths") ?? []
 		self.meditationIsAppleMusic = ud.bool(forKey: "meditationIsAppleMusic")
+		self.meditationIsTidal = ud.bool(forKey: "meditationIsTidal")
 		self.meditationNameStorage = ud.string(forKey: "meditationNameStorage") ?? "None"
 
 		hspEqNode.bands[0].filterType = .lowPass
@@ -1120,6 +1137,22 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 	}
 
+	func addTidalTrack(trackInfo: TidalTrack, isMeditation: Bool = false) {
+		if isMeditation {
+			meditationPaths = [trackInfo.id]
+			meditationIsAppleMusic = false
+			meditationIsTidal = true
+			meditationNameStorage = trackInfo.title
+			loadMeditationTracks()
+		} else {
+			let track = ImportedTrack(name: trackInfo.title, volume: 0.5, isAppleMusic: false, isTidal: true, path: trackInfo.id)
+			track.masterVolume = masterVolume
+			if isPlaying { track.play() }
+			importedTracks.append(track)
+			saveTracks()
+		}
+	}
+
 	func addAlarmAppleMusic(item: MPMediaItem) {
 		if !alarmIsAppleMusic && !alarmPath.isEmpty {
 			let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -1168,6 +1201,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	func clearMeditation() {
 		meditationItems.forEach { $0.avPlayer?.stop() }
 		meditationPlayerNode.stop()
+		TidalManager.shared.stop()
 		meditationItems.removeAll()
 		meditationPaths = []
 		meditationNameStorage = "None"
@@ -1178,14 +1212,17 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	}
 
 	func saveTracks() {
-		let dataList = importedTracks.map { TrackData(id: $0.id, name: $0.name, path: $0.path, volume: $0.volume, isAppleMusic: $0.isAppleMusic, delayAfterMeditation: $0.delayAfterMeditation) }
+		let dataList = importedTracks.map { TrackData(id: $0.id, name: $0.name, path: $0.path, volume: $0.volume, isAppleMusic: $0.isAppleMusic, isTidal: $0.isTidal, delayAfterMeditation: $0.delayAfterMeditation) }
 		if let encoded = try? JSONEncoder().encode(dataList) { savedTracksJSON = encoded }
 	}
 
 	private func loadTracks() {
 		guard let dataList = try? JSONDecoder().decode([TrackData].self, from: savedTracksJSON) else { return }
 		for data in dataList {
-			if data.isAppleMusic {
+			if data.isTidal {
+				let track = ImportedTrack(id: data.id, name: data.name, volume: data.volume, isAppleMusic: false, isTidal: true, path: data.path, delayAfterMeditation: data.delayAfterMeditation)
+				importedTracks.append(track)
+			} else if data.isAppleMusic {
 				if let pid = UInt64(data.path) {
 					let query = MPMediaQuery.songs()
 					let predicate = MPMediaPropertyPredicate(value: pid, forProperty: MPMediaItemPropertyPersistentID)
@@ -1241,7 +1278,13 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 		for path in meditationPaths {
 			var targetURL: URL?
-			if meditationIsAppleMusic {
+			if meditationIsTidal {
+				var item = MeditationItem()
+				item.duration = 60 * 60 // Fake duration for TIDAL stream
+				meditationTotalDuration += item.duration
+				meditationItems.append(item)
+				continue
+			} else if meditationIsAppleMusic {
 				if let pid = UInt64(path) {
 					let query = MPMediaQuery.songs()
 					let predicate = MPMediaPropertyPredicate(value: pid, forProperty: MPMediaItemPropertyPersistentID)
@@ -1317,6 +1360,12 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			meditationFadeMultiplier = 1.0
 			return
 		}
+		
+		if meditationIsTidal, let path = meditationPaths.first {
+			TidalManager.shared.playTrack(id: path)
+			return
+		}
+
 		let item = meditationItems[index]
 		if let player = item.avPlayer {
 			player.play()
@@ -1535,6 +1584,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		for track in importedTracks { track.pause() }
 		meditationItems.forEach { $0.avPlayer?.pause() }
 		meditationPlayerNode.pause()
+		TidalManager.shared.stop()
 		isPlaying = false
 		sleepTimerStartDate = nil
 		UIAccessibility.post(notification: .announcement, argument: "Soundscape halted.")
@@ -2897,6 +2947,7 @@ struct SoundscapeView: View {
 	@ObservedObject var engine: AudioEngineManager
 	@State private var showingFilePicker = false
 	@State private var showingMusicPicker = false
+	@State private var showingTidalSearch = false
 
 	var body: some View {
 		NavigationView {
@@ -2924,6 +2975,7 @@ struct SoundscapeView: View {
 					Menu("Import") {
 						Button("From Files") { showingFilePicker = true }
 						Button("From Apple Music") { showingMusicPicker = true }
+						Button("From TIDAL") { showingTidalSearch = true }
 					}
 				}
 			}
@@ -2936,6 +2988,11 @@ struct SoundscapeView: View {
 			.sheet(isPresented: $showingMusicPicker) {
 				MediaPicker(isPresented: $showingMusicPicker) { items in
 					engine.addAppleMusic(items: items.items)
+				}
+			}
+			.sheet(isPresented: $showingTidalSearch) {
+				TidalSearchView { track in
+					engine.addTidalTrack(trackInfo: track, isMeditation: false)
 				}
 			}
 		}
@@ -3239,6 +3296,7 @@ struct SleepTimerView: View {
 
 	@ObservedObject var engine: AudioEngineManager
 	@State private var showingMeditationMusicPicker = false
+	@State private var showingTidalSearch = false
 	@State private var showingAlarmMusicPicker = false
 	@State private var showingFilePicker = false
 	@State private var fileImportTarget: FileImportTarget?
@@ -3301,6 +3359,7 @@ struct SleepTimerView: View {
 						Menu("Select Meditation") {
 							Button("From Files") { presentFilePicker(for: .meditation) }
 							Button("From Apple Music") { showingMeditationMusicPicker = true }
+							Button("From TIDAL") { showingTidalSearch = true }
 							if !engine.meditationPaths.isEmpty {
 								Button("Clear", role: .destructive) { engine.clearMeditation() }
 							}
@@ -3337,6 +3396,11 @@ struct SleepTimerView: View {
 			.sheet(isPresented: $showingMeditationMusicPicker) {
 				MediaPicker(isPresented: $showingMeditationMusicPicker) { items in
 					engine.addAppleMusic(items: items.items, isMeditation: true)
+				}
+			}
+			.sheet(isPresented: $showingTidalSearch) {
+				TidalSearchView { track in
+					engine.addTidalTrack(trackInfo: track, isMeditation: true)
 				}
 			}
 			.sheet(isPresented: $showingAlarmMusicPicker) {
@@ -3702,6 +3766,10 @@ struct SoundToggleStyle: ToggleStyle {
 
 @main
 struct SleepEngineApp: App {
+	init() {
+		TidalManager.shared.initialize()
+	}
+
 	var body: some Scene {
 		WindowGroup {
 			ContentView()
