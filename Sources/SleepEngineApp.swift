@@ -357,10 +357,11 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	@Published var meditationPaths: [String] = [] { didSet { save("meditationPaths", meditationPaths) } }
 	@Published var meditationIsAppleMusic: Bool = false { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
 	@Published var meditationNameStorage: String = "None" { didSet { save("meditationNameStorage", meditationNameStorage) } }
+	@Published var meditationSoundscapeFadeInDelay: TimeInterval = 0 { didSet { save("meditationSoundscapeFadeInDelay", meditationSoundscapeFadeInDelay) } }
 
 	var isMeditationActive = false
 	var postMeditationPhase = false
-	var meditationTotalDuration: TimeInterval = 0
+	@Published var meditationTotalDuration: TimeInterval = 0
 	var meditationElapsedTime: TimeInterval = 0
 	var postMeditationTime: TimeInterval = 0
 	var currentMeditationIndex = 0
@@ -520,6 +521,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.meditationPaths = ud.stringArray(forKey: "meditationPaths") ?? []
 		self.meditationIsAppleMusic = ud.bool(forKey: "meditationIsAppleMusic")
 		self.meditationNameStorage = ud.string(forKey: "meditationNameStorage") ?? "None"
+		self.meditationSoundscapeFadeInDelay = ud.object(forKey: "meditationSoundscapeFadeInDelay") as? TimeInterval ?? 0
 
 		hspEqNode.bands[0].filterType = .lowPass
 		hspEqNode.bands[0].frequency = enableHSPMode ? 2500.0 : 20000.0
@@ -1171,6 +1173,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		meditationItems.removeAll()
 		meditationPaths = []
 		meditationNameStorage = "None"
+		meditationSoundscapeFadeInDelay = 0
+		meditationTotalDuration = 0
 		isMeditationActive = false
 		postMeditationPhase = false
 		meditationFadeMultiplier = 1.0
@@ -1370,7 +1374,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 			if isCurrentlyPlaying {
 				meditationElapsedTime += 0.1
-				meditationFadeMultiplier = min(1.0, meditationElapsedTime / max(1.0, meditationTotalDuration))
+				let fadeDelay = meditationSoundscapeFadeInDelay
+				let effectiveDuration = max(1.0, meditationTotalDuration - fadeDelay)
+				
+				if meditationElapsedTime < fadeDelay {
+					meditationFadeMultiplier = 0.0
+				} else {
+					meditationFadeMultiplier = min(1.0, (meditationElapsedTime - fadeDelay) / effectiveDuration)
+				}
 			}
 		} else if isPlaying && postMeditationPhase {
 			postMeditationTime += 0.1
@@ -3310,6 +3321,15 @@ struct SleepTimerView: View {
 						Text("The main soundscape will automatically fade in across the duration of this meditation.")
 							.font(.caption)
 							.foregroundColor(.secondary)
+						
+						let totalMinutes = max(0.1, engine.meditationTotalDuration / 60.0)
+						
+						HStack {
+							Text("Fade-In Delay")
+							Slider(value: $engine.meditationSoundscapeFadeInDelay, in: 0...(totalMinutes * 60.0))
+							Text(String(format: "%.1f min", engine.meditationSoundscapeFadeInDelay / 60.0))
+								.frame(width: 60, alignment: .trailing)
+						}
 					}
 				}
 
