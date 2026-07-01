@@ -1363,7 +1363,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 		
 		if meditationIsTidal, let path = meditationPaths.first {
-			TidalManager.shared.playMedia(path: path)
+			TidalManager.shared.playMedia(path: path, loop: false)
 			return
 		}
 

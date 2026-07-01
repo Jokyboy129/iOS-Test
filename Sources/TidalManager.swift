@@ -33,6 +33,7 @@ class TidalManager: NSObject, ObservableObject, PlayerListener {
     private var trackQueue: [String] = []
     private var originalQueue: [String] = []
     private var currentTrackId: String?
+    private var isLooping = true
     
     private override init() { super.init() }
     
@@ -98,7 +99,8 @@ class TidalManager: NSObject, ObservableObject, PlayerListener {
         )
     }
     
-    func playMedia(path: String) {
+    func playMedia(path: String, loop: Bool = true) {
+        self.isLooping = loop
         if path.hasPrefix("album:") {
             let albumId = String(path.dropFirst(6))
             playAlbum(id: albumId)
@@ -157,7 +159,11 @@ class TidalManager: NSObject, ObservableObject, PlayerListener {
     
     private func playNextInQueue() {
         if trackQueue.isEmpty {
-            trackQueue = originalQueue // Loop queue!
+            if isLooping {
+                trackQueue = originalQueue // Loop queue!
+            } else {
+                return // Done playing, do not loop
+            }
         }
         guard !trackQueue.isEmpty else { return }
         
