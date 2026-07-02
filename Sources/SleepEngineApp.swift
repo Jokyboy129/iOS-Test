@@ -186,6 +186,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 	@Published var isPlaying: Bool = false { didSet { syncRenderState() } }
 	@Published var importedTracks: [ImportedTrack] = []
+    
+    @Published var affirmationVolume: Double = 0.5 { didSet { save("affirmationVolume", affirmationVolume); updateVolumes() } }
 
 	var dynamicVolumeMultiplier: Double = 1.0 { didSet { updateVolumes() } }
 	var meditationFadeMultiplier: Double = 1.0 { didSet { updateVolumes() } }
@@ -448,6 +450,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		self.clockVolume = ud.double(forKey: "clockVolume")
 		self.softClickVolume = ud.double(forKey: "softClickVolume")
 		self.brownVolume = ud.double(forKey: "brownVolume")
+        
+        self.affirmationVolume = ud.object(forKey: "affirmationVolume") == nil ? 0.5 : ud.double(forKey: "affirmationVolume")
 		self.whiteVolume = ud.double(forKey: "whiteVolume")
 		self.breathVolume = ud.double(forKey: "breathVolume")
 		self.clickVolume = ud.double(forKey: "clickVolume")
@@ -903,7 +907,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
         
-        let targetAffirmationVol = Float(AffirmationController.shared.volume * masterVolume) * soundscapeMultiplier
+        let targetAffirmationVol = Float(affirmationVolume * masterVolume) * soundscapeMultiplier
         affirmationPlayerNode.volume = targetAffirmationVol
 
 		importedMixer.outputVolume = 1.0

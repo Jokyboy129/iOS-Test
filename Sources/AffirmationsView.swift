@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct AffirmationsView: View {
-    @StateObject var ttsService = OpenAITTSService.shared
-    @StateObject var controller = AffirmationController.shared
+    @ObservedObject var ttsService = OpenAITTSService.shared
+    @ObservedObject var controller = AffirmationController.shared
+    @ObservedObject var engine = AudioEngineManager.shared
     
     @State private var showingGenerateAlert = false
     @State private var selectedLanguageToGenerate = "de"
@@ -77,9 +78,9 @@ struct AffirmationsView: View {
                         HStack {
                             Text("Volume")
                             Spacer()
-                            Text(String(format: "%.0f%%", controller.volume * 100))
+                            Text(String(format: "%.0f%%", engine.affirmationVolume * 100))
                         }
-                        Slider(value: $controller.volume, in: 0...1)
+                        Slider(value: $engine.affirmationVolume, in: 0...1)
                     }
                     
                     VStack {

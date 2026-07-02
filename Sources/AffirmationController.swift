@@ -11,13 +11,6 @@ class AffirmationController: ObservableObject {
         }
     }
     
-    @Published var volume: Double = 0.5 {
-        didSet {
-            UserDefaults.standard.set(volume, forKey: "affirmationVolume")
-            AudioEngineManager.shared.updateVolumes()
-        }
-    }
-    
     @Published var delayMinutes: Double = 1.0 {
         didSet { UserDefaults.standard.set(delayMinutes, forKey: "affirmationDelay") }
     }
@@ -38,7 +31,6 @@ class AffirmationController: ObservableObject {
     
     init() {
         isEnabled = UserDefaults.standard.bool(forKey: "affirmationsEnabled")
-        volume = UserDefaults.standard.object(forKey: "affirmationVolume") as? Double ?? 0.5
         delayMinutes = UserDefaults.standard.object(forKey: "affirmationDelay") as? Double ?? 1.0
         panMode = UserDefaults.standard.integer(forKey: "affirmationPanMode")
         selectedVoice = UserDefaults.standard.string(forKey: "affirmationVoice") ?? "alloy"
