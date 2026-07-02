@@ -904,7 +904,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 		importedMixer.outputVolume = 1.0
 
-		let baseVoiceVol = Float(masterVolume) * soundscapeMultiplier
+		let baseVoiceVol = Float(masterVolume * breathVolume) * soundscapeMultiplier
 		breathingNode.volume = useRealBreathing ? (baseVoiceVol * 4.0) : baseVoiceVol
 		anchorNode.volume = baseVoiceVol * 2.0
 
@@ -2213,7 +2213,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						}
 					}
 
-					let realBreathVolMult: Float = state.useRealBreathing ? 10.0 : 2.5
+					let realBreathVolMult: Float = state.useRealBreathing ? 40.0 : 10.0
 					if isWideBr || isAltBr {
 						chunkBrL = breathSampleL * breathEnv * vBreath * realBreathVolMult
 						chunkBrR = breathSampleR * breathEnv * vBreath * realBreathVolMult
