@@ -171,6 +171,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	let breathingNode = AVAudioPlayerNode()
 	let anchorNode = AVAudioPlayerNode()
 	let meditationPlayerNode = AVAudioPlayerNode()
+	let affirmationPlayerNode = AVAudioPlayerNode()
 
 	var rainPlayerNode: AVAudioPlayerNode?
 	var rainAudioFile: AVAudioFile?
@@ -2246,6 +2247,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.attach(reverbNode)
 			engine.attach(postReverbMixer)
 			engine.attach(meditationPlayerNode)
+			engine.attach(affirmationPlayerNode)
 			engine.attach(breathingNode)
 			engine.attach(anchorNode)
 			engine.attach(hspEqNode)
@@ -2262,6 +2264,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: postReverbMixer, format: format)
 			engine.connect(meditationPlayerNode, to: postReverbMixer, format: format)
+			engine.connect(affirmationPlayerNode, to: postReverbMixer, format: format)
 
 			engine.connect(postReverbMixer, to: hspEqNode, format: format)
 			engine.connect(hspEqNode, to: engine.mainMixerNode, format: format)
@@ -3587,6 +3590,9 @@ struct ContentView: View {
 				SettingsView(engine: engine)
 					.tabItem { Label("Settings", systemImage: "gear") }
 					.tag(4)
+				AffirmationsView()
+					.tabItem { Label("Affirmations", systemImage: "quote.bubble") }
+					.tag(5)
 			}
 			.onChange(of: selectedTab) { _ in
 				BeepGenerator.shared.playTabBeep()

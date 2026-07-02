@@ -230,3 +230,24 @@
 "Start my soundscape in ${applicationName}" = "Starte meine Klanglandschaft in ${applicationName}";
 "Play ${applicationName}" = "Spiele ${applicationName} ab";
 
+
+/* Affirmations */
+"Affirmations" = "Affirmationen";
+"Generation" = "Generierung";
+"Language" = "Sprache";
+"Voice" = "Stimme";
+"Quality Model" = "Qualitätsmodell";
+"Generate Affirmations Audio" = "Affirmationen-Audio generieren";
+"Generate Audio?" = "Audio generieren?";
+"This will download affirmations using your OpenAI API key." = "Dadurch werden Affirmationen über deinen OpenAI-API-Schlüssel heruntergeladen.";
+"Start" = "Start";
+"Playback Settings" = "Wiedergabe-Einstellungen";
+"Enable Affirmations" = "Affirmationen aktivieren";
+"Volume" = "Lautstärke";
+"Delay Between Affirmations" = "Pause zwischen Affirmationen";
+"Panning" = "Panning";
+"Playback Language" = "Wiedergabesprache";
+"Playback Voice" = "Wiedergabestimme";
+"German" = "Deutsch";
+"English" = "Englisch";
+"Random" = "Zufällig";
