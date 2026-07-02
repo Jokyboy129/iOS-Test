@@ -895,13 +895,16 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.connect(anchorNode, to: postReverbMixer, format: format)
 		}
 	}
-	private func updateVolumes() {
+	func updateVolumes() {
 		let soundscapeMultiplier = Float(dynamicVolumeMultiplier * meditationFadeMultiplier * morningFadeMultiplier)
 
 		engine.mainMixerNode.outputVolume = 1.0
 
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
+        
+        let targetAffirmationVol = Float(AffirmationController.shared.volume * masterVolume) * soundscapeMultiplier
+        affirmationPlayerNode.volume = targetAffirmationVol
 
 		importedMixer.outputVolume = 1.0
 

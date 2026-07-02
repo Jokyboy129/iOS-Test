@@ -14,7 +14,7 @@ class AffirmationController: ObservableObject {
     @Published var volume: Double = 0.5 {
         didSet {
             UserDefaults.standard.set(volume, forKey: "affirmationVolume")
-            AudioEngineManager.shared.affirmationPlayerNode.volume = Float(volume)
+            AudioEngineManager.shared.updateVolumes()
         }
     }
     
@@ -95,7 +95,7 @@ class AffirmationController: ObservableObject {
         default: node.pan = 0.0
         }
         
-        node.volume = Float(volume)
+        AudioEngineManager.shared.updateVolumes()
         
         return await withCheckedContinuation { continuation in
             node.scheduleFile(file, at: nil) {
