@@ -356,6 +356,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var suppressRemotePauseUntil = Date.distantPast
 	private var headphoneRemovalFadeTimer: Timer?
 	private var headphoneRemovalSilentMode = false
+	private var wasPausedByHeadphoneRemoval = false
 
 	@Published var meditationPaths: [String] = [] { didSet { save("meditationPaths", meditationPaths) } }
 	@Published var meditationIsAppleMusic: Bool = false { didSet { save("meditationIsAppleMusic", meditationIsAppleMusic) } }
@@ -430,6 +431,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var syncedRealBreathSampleIndex: Int = 0
 	private var syncedRealBreathSegment: Int = 0
 	private var smoothedBreathEnv: Float = 0.0
+	private var previousRealBreathSegment: Int = 0
+	private var previousRealBreathSampleIndex: Int = 0
+	private var crossfadePhase: Float = 0.0
 
 	private var breathingTask: Task<Void, Never>?
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -1548,7 +1552,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		return calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
 	}
 
-	func stopSoundscape(keepEngineAlive: Bool) {
+	func stopSoundscape(keepEngineAlive: Bool, isHeadphoneRemoval: Bool = false) {
 		headphoneRemovalFadeTimer?.invalidate()
 		headphoneRemovalFadeTimer = nil
 		rainPlayerNode?.pause()
@@ -1556,7 +1560,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		meditationItems.forEach { $0.avPlayer?.pause() }
 		meditationPlayerNode.pause()
 		isPlaying = false
-		sleepTimerStartDate = nil
+		if !isHeadphoneRemoval {
+			sleepTimerStartDate = nil
+		}
 		UIAccessibility.post(notification: .announcement, argument: "Soundscape halted.")
 
 		if !keepEngineAlive {
@@ -2149,6 +2155,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						if state.manualBreathState == 1 {
 							usingInhale = true; breathEnv = 0.8
 							if self.syncedRealBreathSegment != 1 {
+								self.previousRealBreathSegment = self.syncedRealBreathSegment
+								self.previousRealBreathSampleIndex = self.syncedRealBreathSampleIndex
+								self.crossfadePhase = 1.0
 								self.syncedRealBreathSegment = 1
 								self.syncedRealBreathSampleIndex = 0
 							}
@@ -2157,14 +2166,22 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						} else if state.manualBreathState == 2 {
 							usingExhale = true; breathEnv = 0.6
 							if self.syncedRealBreathSegment != 2 {
+								self.previousRealBreathSegment = self.syncedRealBreathSegment
+								self.previousRealBreathSampleIndex = self.syncedRealBreathSampleIndex
+								self.crossfadePhase = 1.0
 								self.syncedRealBreathSegment = 2
 								self.syncedRealBreathSampleIndex = 0
 							}
 							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
 							self.syncedRealBreathSampleIndex += 1
 						} else {
-							self.syncedRealBreathSegment = 0
-							self.syncedRealBreathSampleIndex = 0
+							if self.syncedRealBreathSegment != 0 {
+								self.previousRealBreathSegment = self.syncedRealBreathSegment
+								self.previousRealBreathSampleIndex = self.syncedRealBreathSampleIndex
+								self.crossfadePhase = 1.0
+								self.syncedRealBreathSegment = 0
+								self.syncedRealBreathSampleIndex = 0
+							}
 						}
 					} else if state.syncBreathing {
 						let syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration)
@@ -2194,6 +2211,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						if state.useRealBreathing {
 							let currentSegment = usingInhale ? 1 : 2
 							if currentSegment != self.syncedRealBreathSegment {
+								self.previousRealBreathSegment = self.syncedRealBreathSegment
+								self.previousRealBreathSampleIndex = self.syncedRealBreathSampleIndex
+								self.crossfadePhase = 1.0
 								self.syncedRealBreathSegment = currentSegment
 								self.syncedRealBreathSampleIndex = 0
 							}
@@ -2207,9 +2227,15 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							}
 						}
 					} else {
-						self.syncedRealBreathSegment = 0
-						self.syncedRealBreathSampleIndex = 0
 						let breathDuration = 6.0; let breathPhase = fmod(timeInSeconds, breathDuration) / breathDuration
+						let currentSegment = breathPhase < 0.45 ? 1 : (breathPhase >= 0.5 && breathPhase < 0.95 ? 2 : 0)
+						if currentSegment != self.syncedRealBreathSegment {
+							self.previousRealBreathSegment = self.syncedRealBreathSegment
+							self.previousRealBreathSampleIndex = self.syncedRealBreathSampleIndex
+							self.crossfadePhase = 1.0
+							self.syncedRealBreathSegment = currentSegment
+							self.syncedRealBreathSampleIndex = 0
+						}
 						if breathPhase < 0.45 {
 							usingInhale = true; let inhalePhase = Float(sin(Double.pi * (breathPhase / 0.45))); breathEnv = inhalePhase * 0.8
 							sampleIdxForRealBreath = Int((breathPhase / 0.45) * (0.45 * breathDuration * self.sampleRate))
@@ -2233,6 +2259,27 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							let idxL = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realExhale.count)
 							let idxR = self.getPingPongIndex(index: max(0, sampleIdxForRealBreath - offsetSamplesBr), count: realExhale.count)
 							breathSampleL = realExhale[idxL]; breathSampleR = realExhale[idxR]
+						}
+
+						if self.crossfadePhase > 0 {
+							var prevL: Float = 0; var prevR: Float = 0
+							if self.previousRealBreathSegment == 1 && !realInhale.isEmpty {
+								let idxL = self.getPingPongIndex(index: self.previousRealBreathSampleIndex, count: realInhale.count)
+								let idxR = self.getPingPongIndex(index: max(0, self.previousRealBreathSampleIndex - offsetSamplesBr), count: realInhale.count)
+								prevL = realInhale[idxL]; prevR = realInhale[idxR]
+							} else if self.previousRealBreathSegment == 2 && !realExhale.isEmpty {
+								let idxL = self.getPingPongIndex(index: self.previousRealBreathSampleIndex, count: realExhale.count)
+								let idxR = self.getPingPongIndex(index: max(0, self.previousRealBreathSampleIndex - offsetSamplesBr), count: realExhale.count)
+								prevL = realExhale[idxL]; prevR = realExhale[idxR]
+							}
+							
+							self.crossfadePhase -= 1.0 / Float(self.sampleRate * 0.5)
+							if self.crossfadePhase < 0 { self.crossfadePhase = 0 }
+							
+							breathSampleL = breathSampleL + prevL * self.crossfadePhase
+							breathSampleR = breathSampleR + prevR * self.crossfadePhase
+							
+							self.previousRealBreathSampleIndex += 1
 						}
 					} else {
 						let count = breathL.count
@@ -2657,6 +2704,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			headphoneRemovalFadeTimer?.invalidate()
 			headphoneRemovalFadeTimer = nil
 			headphoneRemovalSilentMode = false
+			wasPausedByHeadphoneRemoval = false
 			applyAudioSessionSettings()
 
 			if sourceNode == nil { setupAudio() }
@@ -2784,6 +2832,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			updateSilentBackgroundAudio()
 			return
 		}
+		
+		self.wasPausedByHeadphoneRemoval = true
 
 		headphoneRemovalFadeTimer?.invalidate()
 		let keepAlarmAlive = enableMorningAlarm && alarmAutomationArmed
@@ -2805,7 +2855,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				timer.invalidate()
 				self.headphoneRemovalFadeTimer = nil
 				self.headphoneRemovalSilentMode = keepAlarmAlive
-				self.stopSoundscape(keepEngineAlive: keepAlarmAlive)
+				self.stopSoundscape(keepEngineAlive: keepAlarmAlive, isHeadphoneRemoval: true)
 			}
 		}
 	}
@@ -2860,6 +2910,60 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
 			if reason == .oldDeviceUnavailable && self.fadeToSilentOnHeadphoneRemoval {
 				self.fadeToSilentAfterHeadphoneRemoval()
+			} else if reason == .newDeviceAvailable {
+				if self.wasPausedByHeadphoneRemoval || self.headphoneRemovalFadeTimer != nil {
+					self.headphoneRemovalFadeTimer?.invalidate()
+					self.headphoneRemovalFadeTimer = nil
+					self.wasPausedByHeadphoneRemoval = false
+
+					if !self.isPlaying {
+						if self.enableSleepTimer, let start = self.sleepTimerStartDate {
+							let elapsed = Date().timeIntervalSince(start)
+							let playTime = self.sleepTimerHours * 3600.0
+							let fadeTime = self.sleepFadeMinutes * 60.0
+							if elapsed >= playTime + fadeTime {
+								return
+							}
+						}
+
+						self.applyAudioSessionSettings()
+						self.ensureSilentBackgroundAudio()
+						self.updateVoiceRouting()
+						try? self.engine.start()
+						self.rainPlayerNode?.play()
+						for track in self.importedTracks { track.play() }
+						if self.isMeditationActive && !self.meditationItems.isEmpty {
+							self.playMeditationTrack(at: self.currentMeditationIndex)
+						}
+						self.isPlaying = true
+						self.dynamicVolumeMultiplier = 0.0
+					}
+
+					let startMultiplier = self.dynamicVolumeMultiplier
+					var elapsed: TimeInterval = 0
+					let duration: TimeInterval = 3.0
+
+					self.headphoneRemovalFadeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+						guard let self = self else {
+							timer.invalidate()
+							return
+						}
+						elapsed += 0.1
+						let progress = min(1.0, elapsed / duration)
+						self.dynamicVolumeMultiplier = startMultiplier + (1.0 - startMultiplier) * progress
+
+						if progress >= 1.0 {
+							timer.invalidate()
+							self.headphoneRemovalFadeTimer = nil
+							self.dynamicVolumeMultiplier = 1.0
+						}
+					}
+				} else {
+					self.resumeAfterRouteChange()
+					DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+						self.resumeAfterRouteChange()
+					}
+				}
 			} else if reason == .oldDeviceUnavailable || reason == .routeConfigurationChange || reason == .categoryChange || reason == .override {
 				self.resumeAfterRouteChange()
 				DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
