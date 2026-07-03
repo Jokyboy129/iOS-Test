@@ -1,73 +1,16 @@
 import SwiftUI
 
 struct AffirmationsView: View {
-    @ObservedObject var ttsService = OpenAITTSService.shared
     @ObservedObject var controller = AffirmationController.shared
     @ObservedObject var engine = AudioEngineManager.shared
-    
-    @State private var showingGenerateAlert = false
-    @State private var selectedLanguageToGenerate = "de"
-    @State private var selectedVoiceToGenerate = "alloy"
-    @State private var selectedModelToGenerate = "tts-1"
-    
-    let voices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
     
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("Generation")) {
-                    Picker("Language", selection: $selectedLanguageToGenerate) {
-                        Text("German").tag("de")
-                        Text("English").tag("en")
-                    }
-                    
-                    Picker("Voice", selection: $selectedVoiceToGenerate) {
-                        ForEach(voices, id: \.self) { voice in
-                            Text(voice.capitalized).tag(voice)
-                        }
-                    }
-                    
-                    Picker("Quality Model", selection: $selectedModelToGenerate) {
-                        Text("Standard (tts-1)").tag("tts-1")
-                        Text("High Def (tts-1-hd)").tag("tts-1-hd")
-                    }
-                    
-                    Button(action: {
-                        showingGenerateAlert = true
-                    }) {
-                        HStack {
-                            Text("Generate Affirmations Audio")
-                            Spacer()
-                            if ttsService.isGenerating {
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .disabled(ttsService.isGenerating)
-                    .alert(isPresented: $showingGenerateAlert) {
-                        Alert(
-                            title: Text("Generate Audio?"),
-                            message: Text("This will download affirmations using your OpenAI API key."),
-                            primaryButton: .default(Text("Start")) {
-                                Task {
-                                    try? await ttsService.generateAffirmations(
-                                        language: selectedLanguageToGenerate,
-                                        voice: selectedVoiceToGenerate,
-                                        model: selectedModelToGenerate
-                                    )
-                                }
-                            },
-                            secondaryButton: .cancel()
-                        )
-                    }
-                    
-                    if ttsService.isGenerating {
-                        VStack {
-                            ProgressView(value: ttsService.progress)
-                            Text("\(ttsService.generatedCount) / \(ttsService.totalCount) downloaded")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                if controller.availableAffirmationsCount == 0 {
+                    Section {
+                        Text("This version contains no affirmations")
+                            .foregroundColor(.secondary)
                     }
                 }
                 
@@ -102,12 +45,6 @@ struct AffirmationsView: View {
                     Picker("Playback Language", selection: $controller.language) {
                         Text("German").tag("de")
                         Text("English").tag("en")
-                    }
-                    
-                    Picker("Playback Voice", selection: $controller.selectedVoice) {
-                        ForEach(voices, id: \.self) { voice in
-                            Text(voice.capitalized).tag(voice)
-                        }
                     }
                 }
             }

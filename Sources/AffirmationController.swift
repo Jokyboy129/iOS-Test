@@ -19,22 +19,102 @@ class AffirmationController: ObservableObject {
         didSet { UserDefaults.standard.set(panMode, forKey: "affirmationPanMode") }
     }
     
-    @Published var selectedVoice: String = "alloy" {
-        didSet { UserDefaults.standard.set(selectedVoice, forKey: "affirmationVoice") }
+    @Published var language: String = "de" { // "en" or "de"
+        didSet { 
+            UserDefaults.standard.set(language, forKey: "affirmationLanguage")
+            updateAvailableAffirmationsCount()
+        }
     }
     
-    @Published var language: String = "de" { // "en" or "de"
-        didSet { UserDefaults.standard.set(language, forKey: "affirmationLanguage") }
-    }
+    @Published var availableAffirmationsCount: Int = 0
     
     private var playbackTask: Task<Void, Never>?
+    private var availableURLs: [URL] = []
     
     init() {
         isEnabled = UserDefaults.standard.bool(forKey: "affirmationsEnabled")
         delayMinutes = UserDefaults.standard.object(forKey: "affirmationDelay") as? Double ?? 1.0
         panMode = UserDefaults.standard.integer(forKey: "affirmationPanMode")
-        selectedVoice = UserDefaults.standard.string(forKey: "affirmationVoice") ?? "alloy"
         language = UserDefaults.standard.string(forKey: "affirmationLanguage") ?? "de"
+        
+        cleanupOldAIFiles()
+        updateAvailableAffirmationsCount()
+    }
+    
+    private func cleanupOldAIFiles() {
+        let fileManager = FileManager.default
+        guard let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        
+        do {
+            let fileURLs = try fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil)
+            for fileURL in fileURLs where fileURL.pathExtension == "mp3" {
+                // The AI files were named like "de_alloy_0.mp3"
+                if fileURL.lastPathComponent.contains("_alloy_") || 
+                   fileURL.lastPathComponent.contains("_echo_") || 
+                   fileURL.lastPathComponent.contains("_fable_") || 
+                   fileURL.lastPathComponent.contains("_onyx_") || 
+                   fileURL.lastPathComponent.contains("_nova_") || 
+                   fileURL.lastPathComponent.contains("_shimmer_") {
+                    try fileManager.removeItem(at: fileURL)
+                }
+            }
+        } catch {
+            print("Error cleaning up old AI files: \(error)")
+        }
+    }
+    
+    private func updateAvailableAffirmationsCount() {
+        var urls: [URL] = []
+        var index = 1
+        
+        while true {
+            var foundURL: URL? = nil
+            
+            // Check lowercase extensions first
+            if let url = Bundle.main.url(forResource: "\(index)", withExtension: "wav", subdirectory: "affirmations/\(language)") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "mp3", subdirectory: "affirmations/\(language)") {
+                foundURL = url
+            } 
+            // Check uppercase extensions
+            else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "WAV", subdirectory: "affirmations/\(language)") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "MP3", subdirectory: "affirmations/\(language)") {
+                foundURL = url
+            }
+            // Fallbacks for flattened structures
+            else if let url = Bundle.main.url(forResource: "\(language)_\(index)", withExtension: "wav") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(language)_\(index)", withExtension: "mp3") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(language)_\(index)", withExtension: "WAV") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(language)_\(index)", withExtension: "MP3") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "wav") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "mp3") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "WAV") {
+                foundURL = url
+            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "MP3") {
+                foundURL = url
+            }
+            
+            if let url = foundURL {
+                urls.append(url)
+                index += 1
+            } else {
+                break
+            }
+        }
+        
+        availableURLs = urls
+        availableAffirmationsCount = availableURLs.count
+        
+        if isEnabled && availableAffirmationsCount == 0 {
+            isEnabled = false
+        }
     }
     
     func startLoop() {
@@ -43,18 +123,16 @@ class AffirmationController: ObservableObject {
             // Initial delay before starting
             try? await Task.sleep(nanoseconds: UInt64(delayMinutes * 60 * 1_000_000_000))
             
-            let count = language == "de" ? AffirmationData.germanAffirmations.count : AffirmationData.englishAffirmations.count
-            guard count > 0 else { return }
+            updateAvailableAffirmationsCount()
+            guard availableAffirmationsCount > 0 else { return }
             
-            var indices = Array(0..<count)
-            indices.shuffle() // Play randomly
+            var shuffledURLs = availableURLs
+            shuffledURLs.shuffle() // Play randomly
             
-            for index in indices {
+            for url in shuffledURLs {
                 if Task.isCancelled { break }
                 
-                if let url = OpenAITTSService.shared.getAudioURL(for: index, language: language, voice: selectedVoice) {
-                    await playAudio(url: url)
-                }
+                await playAudio(url: url)
                 
                 // Wait for the delay
                 if !Task.isCancelled {
