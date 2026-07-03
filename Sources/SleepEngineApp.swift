@@ -429,9 +429,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var lastManualState: Int = 0
 	private var syncedRealBreathSampleIndex: Int = 0
 	private var syncedRealBreathSegment: Int = 0
-	private var releasingBreathSegment: Int = 0
-	private var releasingBreathSampleIndex: Int = 0
-	private var releasingBreathVolume: Float = 0
 
 	private var breathingTask: Task<Void, Never>?
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -1696,9 +1693,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					await MainActor.run {
 						currentBreathingPhase = "Hold (\(hold1)s)"
 						manualBreathState = 3
-						if enableEnhancedAnchors && Bool.random() {
+						if enableEnhancedAnchors && Bool.random() && !useRealBreathing {
 							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
-						} else {
+						} else if !useRealBreathing {
 							playBreathingCue(type: "HOLD")
 						}
 					}
@@ -1716,9 +1713,9 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					await MainActor.run {
 						currentBreathingPhase = "Hold (\(hold2)s)"
 						manualBreathState = 3
-						if enableEnhancedAnchors && Bool.random() {
+						if enableEnhancedAnchors && Bool.random() && !useRealBreathing {
 							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
-						} else {
+						} else if !useRealBreathing {
 							playBreathingCue(type: "HOLD")
 						}
 					}
@@ -2148,25 +2145,16 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if vBreath > 0 {
 					var breathEnv: Float = 0; var sampleIdxForRealBreath = 0; var usingInhale = false; var usingExhale = false
 					if state.isBreathing {
-						let currentSegment = state.manualBreathState
-						if currentSegment != self.syncedRealBreathSegment {
-							if self.syncedRealBreathSegment != 0 {
-								self.releasingBreathSegment = self.syncedRealBreathSegment
-								self.releasingBreathSampleIndex = self.syncedRealBreathSampleIndex
-								self.releasingBreathVolume = 1.0
-							}
-							self.syncedRealBreathSegment = currentSegment
-							self.syncedRealBreathSampleIndex = 0
-						}
-
-						if currentSegment == 1 {
+						if state.manualBreathState == 1 {
 							usingInhale = true; breathEnv = 0.8
 							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
 							self.syncedRealBreathSampleIndex += 1
-						} else if currentSegment == 2 {
+						} else if state.manualBreathState == 2 {
 							usingExhale = true; breathEnv = 0.6
 							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
 							self.syncedRealBreathSampleIndex += 1
+						} else {
+							self.syncedRealBreathSampleIndex = 0
 						}
 					} else if state.syncBreathing {
 						let syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration)
@@ -2196,11 +2184,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						if state.useRealBreathing {
 							let currentSegment = usingInhale ? 1 : 2
 							if currentSegment != self.syncedRealBreathSegment {
-								if self.syncedRealBreathSegment != 0 {
-									self.releasingBreathSegment = self.syncedRealBreathSegment
-									self.releasingBreathSampleIndex = self.syncedRealBreathSampleIndex
-									self.releasingBreathVolume = 1.0
-								}
 								self.syncedRealBreathSegment = currentSegment
 								self.syncedRealBreathSampleIndex = 0
 							}
@@ -2214,12 +2197,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							}
 						}
 					} else {
-						if self.syncedRealBreathSegment != 0 {
-							self.releasingBreathSegment = self.syncedRealBreathSegment
-							self.releasingBreathSampleIndex = self.syncedRealBreathSampleIndex
-							self.releasingBreathVolume = 1.0
-							self.syncedRealBreathSegment = 0
-						}
+						self.syncedRealBreathSegment = 0
 						self.syncedRealBreathSampleIndex = 0
 						let breathDuration = 6.0; let breathPhase = fmod(timeInSeconds, breathDuration) / breathDuration
 						if breathPhase < 0.45 {
@@ -2231,63 +2209,37 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						}
 					}
 
-					var finalBreathL: Float = 0; var finalBreathR: Float = 0
+					var breathSampleL: Float = 0; var breathSampleR: Float = 0
 					let isWideBr = state.panBreathIndex == 9
 					let isAltBr = state.panBreathIndex == 10
 					let offsetSamplesBr = (isWideBr || isAltBr) ? (isAltBr ? Int(0.08 * self.sampleRate) : Int(0.005 * self.sampleRate)) : 0
 
 					if state.useRealBreathing {
-						var activeL: Float = 0; var activeR: Float = 0
 						if usingInhale && !realInhale.isEmpty {
-							activeL = self.getCrossfadedLoopSample(buffer: realInhale, index: sampleIdxForRealBreath)
-							activeR = self.getCrossfadedLoopSample(buffer: realInhale, index: max(0, sampleIdxForRealBreath - offsetSamplesBr))
+							let idxL = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realInhale.count)
+							let idxR = self.getPingPongIndex(index: max(0, sampleIdxForRealBreath - offsetSamplesBr), count: realInhale.count)
+							breathSampleL = realInhale[idxL]; breathSampleR = realInhale[idxR]
 						} else if usingExhale && !realExhale.isEmpty {
-							activeL = self.getCrossfadedLoopSample(buffer: realExhale, index: sampleIdxForRealBreath)
-							activeR = self.getCrossfadedLoopSample(buffer: realExhale, index: max(0, sampleIdxForRealBreath - offsetSamplesBr))
-						}
-						
-						finalBreathL += activeL * breathEnv
-						finalBreathR += activeR * breathEnv
-
-						if self.releasingBreathVolume > 0 {
-							var relSampleL: Float = 0
-							var relSampleR: Float = 0
-							let relIndex = self.releasingBreathSampleIndex
-							let relIndexR = max(0, relIndex - offsetSamplesBr)
-
-							if self.releasingBreathSegment == 1 && !realInhale.isEmpty {
-								relSampleL = self.getCrossfadedLoopSample(buffer: realInhale, index: relIndex)
-								relSampleR = self.getCrossfadedLoopSample(buffer: realInhale, index: relIndexR)
-							} else if self.releasingBreathSegment == 2 && !realExhale.isEmpty {
-								relSampleL = self.getCrossfadedLoopSample(buffer: realExhale, index: relIndex)
-								relSampleR = self.getCrossfadedLoopSample(buffer: realExhale, index: relIndexR)
-							}
-
-							let relEnv: Float = self.releasingBreathSegment == 1 ? 0.8 : 0.6
-							finalBreathL += relSampleL * relEnv * self.releasingBreathVolume
-							finalBreathR += relSampleR * relEnv * self.releasingBreathVolume
-							
-							self.releasingBreathSampleIndex += 1
-							self.releasingBreathVolume -= 1.0 / Float(0.5 * self.sampleRate)
-							if self.releasingBreathVolume < 0 { self.releasingBreathVolume = 0 }
+							let idxL = self.getPingPongIndex(index: sampleIdxForRealBreath, count: realExhale.count)
+							let idxR = self.getPingPongIndex(index: max(0, sampleIdxForRealBreath - offsetSamplesBr), count: realExhale.count)
+							breathSampleL = realExhale[idxL]; breathSampleR = realExhale[idxR]
 						}
 					} else {
 						let count = breathL.count
 						if count > 0 {
 							let idxL = idxNoise % count
 							let idxR = ((idxNoise - offsetSamplesBr) % count + count) % count
-							finalBreathL = breathL[idxL] * breathEnv
-							finalBreathR = breathR[idxR] * breathEnv
+							breathSampleL = breathL[idxL]; breathSampleR = breathR[idxR]
 						}
 					}
 
 					let realBreathVolMult: Float = state.useRealBreathing ? 40.0 : 10.0
 					if isWideBr || isAltBr {
-						chunkBrL = finalBreathL * vBreath * realBreathVolMult
-						chunkBrR = finalBreathR * vBreath * realBreathVolMult
+						chunkBrL = breathSampleL * breathEnv * vBreath * realBreathVolMult
+						chunkBrR = breathSampleR * breathEnv * vBreath * realBreathVolMult
 					} else {
 						let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
-						let pannedBr = self.applyStereoPan(inL: finalBreathL, inR: finalBreathR, pos: posBr, vol: vBreath * realBreathVolMult)
+						let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult)
 						chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 					}
 				}
