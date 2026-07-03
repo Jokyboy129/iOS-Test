@@ -913,7 +913,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
         
-        let targetAffirmationVol = Float(affirmationVolume * masterVolume) * soundscapeMultiplier * 8.0
+        let affirmationBoost: Float = AffirmationController.shared.style == "whisper" ? 8.0 : 2.0
+        let targetAffirmationVol = Float(affirmationVolume * masterVolume) * soundscapeMultiplier * affirmationBoost
         affirmationPlayerNode.volume = targetAffirmationVol
 
 		importedMixer.outputVolume = 1.0
