@@ -912,7 +912,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
         
-        let targetAffirmationVol = Float(affirmationVolume * masterVolume) * soundscapeMultiplier
+        let targetAffirmationVol = Float(affirmationVolume * masterVolume) * soundscapeMultiplier * 4.0
         affirmationPlayerNode.volume = targetAffirmationVol
 
 		importedMixer.outputVolume = 1.0
