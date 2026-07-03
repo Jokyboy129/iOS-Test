@@ -175,7 +175,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	let affirmationLimiter: AVAudioUnitDynamicsProcessor = {
 		let limiter = AVAudioUnitDynamicsProcessor()
 		limiter.threshold = -2.0 // Only limit at the very top
-		limiter.headRoom = 0.1 // Brickwall
+		limiter.headroom = 0.1 // Brickwall
 		limiter.attackTime = 0.001 // Fast attack to catch peaks
 		limiter.releaseTime = 0.05 // Fast release
 		return limiter
