@@ -26,6 +26,13 @@ class AffirmationController: ObservableObject {
         }
     }
     
+    @Published var style: String = "normal" { // "normal" or "whisper"
+        didSet { 
+            UserDefaults.standard.set(style, forKey: "affirmationStyle")
+            updateAvailableAffirmationsCount()
+        }
+    }
+    
     @Published var availableAffirmationsCount: Int = 0
     
     private var playbackTask: Task<Void, Never>?
@@ -36,6 +43,7 @@ class AffirmationController: ObservableObject {
         delayMinutes = UserDefaults.standard.object(forKey: "affirmationDelay") as? Double ?? 1.0
         panMode = UserDefaults.standard.integer(forKey: "affirmationPanMode")
         language = UserDefaults.standard.string(forKey: "affirmationLanguage") ?? "de"
+        style = UserDefaults.standard.string(forKey: "affirmationStyle") ?? "normal"
         
         cleanupOldAIFiles()
         updateAvailableAffirmationsCount()
@@ -71,15 +79,15 @@ class AffirmationController: ObservableObject {
             var foundURL: URL? = nil
             
             // Check lowercase extensions first
-            if let url = Bundle.main.url(forResource: "\(index)", withExtension: "wav", subdirectory: "affirmations/\(language)") {
+            if let url = Bundle.main.url(forResource: "\(index)", withExtension: "wav", subdirectory: "affirmations/\(language)/\(style)") {
                 foundURL = url
-            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "mp3", subdirectory: "affirmations/\(language)") {
+            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "mp3", subdirectory: "affirmations/\(language)/\(style)") {
                 foundURL = url
             } 
             // Check uppercase extensions
-            else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "WAV", subdirectory: "affirmations/\(language)") {
+            else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "WAV", subdirectory: "affirmations/\(language)/\(style)") {
                 foundURL = url
-            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "MP3", subdirectory: "affirmations/\(language)") {
+            } else if let url = Bundle.main.url(forResource: "\(index)", withExtension: "MP3", subdirectory: "affirmations/\(language)/\(style)") {
                 foundURL = url
             }
             // Fallbacks for flattened structures

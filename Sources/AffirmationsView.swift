@@ -46,6 +46,11 @@ struct AffirmationsView: View {
                         Text("German").tag("de")
                         Text("English").tag("en")
                     }
+                    
+                    Picker("Playback Style", selection: $controller.style) {
+                        Text("Normal").tag("normal")
+                        Text("Whisper").tag("whisper")
+                    }
                 }
             }
             .navigationTitle("Affirmations")
