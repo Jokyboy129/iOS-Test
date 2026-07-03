@@ -3866,9 +3866,6 @@ struct SoundToggleStyle: ToggleStyle {
 
 @main
 struct SleepEngineApp: App {
-	init() {
-		_ = AffirmationController.shared
-	}
 
 	var body: some Scene {
 		WindowGroup {

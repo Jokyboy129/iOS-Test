@@ -162,7 +162,9 @@ class AffirmationController: ObservableObject {
     func stopLoop() {
         playbackTask?.cancel()
         playbackTask = nil
-        AudioEngineManager.shared.affirmationPlayerNode.stop()
+        Task {
+            AudioEngineManager.shared.affirmationPlayerNode.stop()
+        }
     }
     
     private func playAudio(url: URL) async {
