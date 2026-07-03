@@ -123,10 +123,6 @@ class AffirmationController: ObservableObject {
         
         availableURLs = urls
         availableAffirmationsCount = availableURLs.count
-        
-        if isEnabled && availableAffirmationsCount == 0 {
-            isEnabled = false
-        }
     }
     
     func startLoop() {
