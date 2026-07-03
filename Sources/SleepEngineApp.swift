@@ -172,7 +172,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	let anchorNode = AVAudioPlayerNode()
 	let meditationPlayerNode = AVAudioPlayerNode()
 	let affirmationPlayerNode = AVAudioPlayerNode()
-	let affirmationLimiter = AVAudioUnitDynamicsProcessor()
+	let affirmationLimiter: AVAudioUnitDynamicsProcessor = {
+		let limiter = AVAudioUnitDynamicsProcessor()
+		limiter.threshold = -2.0 // Only limit at the very top
+		limiter.headRoom = 0.1 // Brickwall
+		limiter.attackTime = 0.001 // Fast attack to catch peaks
+		limiter.releaseTime = 0.05 // Fast release
+		return limiter
+	}()
 
 	var rainPlayerNode: AVAudioPlayerNode?
 	var rainAudioFile: AVAudioFile?
@@ -913,7 +920,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
         
-        let affirmationBoost: Float = AffirmationController.shared.style == "whisper" ? 8.0 : 2.0
+        let affirmationBoost: Float = AffirmationController.shared.style == "whisper" ? 12.0 : 2.0
         let targetAffirmationVol = Float(affirmationVolume * masterVolume) * soundscapeMultiplier * affirmationBoost
         affirmationPlayerNode.volume = targetAffirmationVol
 
