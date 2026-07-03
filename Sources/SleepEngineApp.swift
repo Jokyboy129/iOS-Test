@@ -429,6 +429,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	private var lastManualState: Int = 0
 	private var syncedRealBreathSampleIndex: Int = 0
 	private var syncedRealBreathSegment: Int = 0
+	private var smoothedBreathEnv: Float = 0.0
 
 	private var breathingTask: Task<Void, Never>?
 	private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -1693,7 +1694,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					await MainActor.run {
 						currentBreathingPhase = "Hold (\(hold1)s)"
 						manualBreathState = 3
-						if enableEnhancedAnchors && Bool.random() && !useRealBreathing {
+						if enableEnhancedAnchors && Bool.random() {
 							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
 						} else if !useRealBreathing {
 							playBreathingCue(type: "HOLD")
@@ -1713,7 +1714,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					await MainActor.run {
 						currentBreathingPhase = "Hold (\(hold2)s)"
 						manualBreathState = 3
-						if enableEnhancedAnchors && Bool.random() && !useRealBreathing {
+						if enableEnhancedAnchors && Bool.random() {
 							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
 						} else if !useRealBreathing {
 							playBreathingCue(type: "HOLD")
@@ -2147,13 +2148,22 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					if state.isBreathing {
 						if state.manualBreathState == 1 {
 							usingInhale = true; breathEnv = 0.8
+							if self.syncedRealBreathSegment != 1 {
+								self.syncedRealBreathSegment = 1
+								self.syncedRealBreathSampleIndex = 0
+							}
 							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
 							self.syncedRealBreathSampleIndex += 1
 						} else if state.manualBreathState == 2 {
 							usingExhale = true; breathEnv = 0.6
+							if self.syncedRealBreathSegment != 2 {
+								self.syncedRealBreathSegment = 2
+								self.syncedRealBreathSampleIndex = 0
+							}
 							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
 							self.syncedRealBreathSampleIndex += 1
 						} else {
+							self.syncedRealBreathSegment = 0
 							self.syncedRealBreathSampleIndex = 0
 						}
 					} else if state.syncBreathing {
@@ -2233,13 +2243,16 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						}
 					}
 
+					self.smoothedBreathEnv += (breathEnv - self.smoothedBreathEnv) * 0.0001
+					let effectiveBreathEnv = state.useRealBreathing ? breathEnv : self.smoothedBreathEnv
+
 					let realBreathVolMult: Float = state.useRealBreathing ? 40.0 : 10.0
 					if isWideBr || isAltBr {
-						chunkBrL = breathSampleL * breathEnv * vBreath * realBreathVolMult
-						chunkBrR = breathSampleR * breathEnv * vBreath * realBreathVolMult
+						chunkBrL = breathSampleL * effectiveBreathEnv * vBreath * realBreathVolMult
+						chunkBrR = breathSampleR * effectiveBreathEnv * vBreath * realBreathVolMult
 					} else {
 						let posBr = self.getPanPos(mode: state.panBreathIndex, time: tChunk)
-						let pannedBr = self.applyStereoPan(inL: breathSampleL * breathEnv, inR: breathSampleR * breathEnv, pos: posBr, vol: vBreath * realBreathVolMult)
+						let pannedBr = self.applyStereoPan(inL: breathSampleL * effectiveBreathEnv, inR: breathSampleR * effectiveBreathEnv, pos: posBr, vol: vBreath * realBreathVolMult)
 						chunkBrL = pannedBr.0; chunkBrR = pannedBr.1
 					}
 				}
