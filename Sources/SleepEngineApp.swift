@@ -172,6 +172,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	let anchorNode = AVAudioPlayerNode()
 	let meditationPlayerNode = AVAudioPlayerNode()
 	let affirmationPlayerNode = AVAudioPlayerNode()
+	let affirmationLimiter = AVAudioUnitDynamicsProcessor()
 
 	var rainPlayerNode: AVAudioPlayerNode?
 	var rainAudioFile: AVAudioFile?
@@ -912,7 +913,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		let targetRainVol = Float(rainVolume * masterVolume) * soundscapeMultiplier
 		rainPlayerNode?.volume = targetRainVol
         
-        let targetAffirmationVol = Float(affirmationVolume * masterVolume) * soundscapeMultiplier * 4.0
+        let targetAffirmationVol = Float(affirmationVolume * masterVolume) * soundscapeMultiplier * 8.0
         affirmationPlayerNode.volume = targetAffirmationVol
 
 		importedMixer.outputVolume = 1.0
@@ -2328,6 +2329,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.attach(postReverbMixer)
 			engine.attach(meditationPlayerNode)
 			engine.attach(affirmationPlayerNode)
+			engine.attach(affirmationLimiter)
 			engine.attach(breathingNode)
 			engine.attach(anchorNode)
 			engine.attach(hspEqNode)
@@ -2344,7 +2346,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			engine.connect(preReverbMixer, to: reverbNode, format: format)
 			engine.connect(reverbNode, to: postReverbMixer, format: format)
 			engine.connect(meditationPlayerNode, to: postReverbMixer, format: format)
-			engine.connect(affirmationPlayerNode, to: postReverbMixer, format: format)
+			engine.connect(affirmationPlayerNode, to: affirmationLimiter, format: format)
+			engine.connect(affirmationLimiter, to: postReverbMixer, format: format)
 
 			engine.connect(postReverbMixer, to: hspEqNode, format: format)
 			engine.connect(hspEqNode, to: engine.mainMixerNode, format: format)
@@ -3865,6 +3868,10 @@ struct SoundToggleStyle: ToggleStyle {
 
 @main
 struct SleepEngineApp: App {
+	init() {
+		_ = AffirmationController.shared
+	}
+
 	var body: some Scene {
 		WindowGroup {
 			ContentView()

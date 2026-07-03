@@ -47,6 +47,10 @@ class AffirmationController: ObservableObject {
         
         cleanupOldAIFiles()
         updateAvailableAffirmationsCount()
+        
+        if isEnabled {
+            startLoop()
+        }
     }
     
     private func cleanupOldAIFiles() {
