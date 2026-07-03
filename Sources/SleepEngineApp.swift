@@ -1685,7 +1685,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				await MainActor.run {
 					currentBreathingPhase = "Inhale (\(inhale)s)"
 					manualBreathState = 1
-					playBreathingCue(type: "INHALE", duration: Double(inhale))
+					if !useRealBreathing { playBreathingCue(type: "INHALE", duration: Double(inhale)) }
 				}
 				try? await Task.sleep(nanoseconds: UInt64(inhale) * 1_000_000_000)
 				if Task.isCancelled { break }
@@ -1695,7 +1695,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						manualBreathState = 3
 						if enableEnhancedAnchors && Bool.random() && !useRealBreathing {
 							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
-						} else {
+						} else if !useRealBreathing {
 							playBreathingCue(type: "HOLD")
 						}
 					}
@@ -1705,7 +1705,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				await MainActor.run {
 					currentBreathingPhase = "Exhale (\(exhale)s)"
 					manualBreathState = 2
-					playBreathingCue(type: "EXHALE", duration: Double(exhale))
+					if !useRealBreathing { playBreathingCue(type: "EXHALE", duration: Double(exhale)) }
 				}
 				try? await Task.sleep(nanoseconds: UInt64(exhale) * 1_000_000_000)
 				if Task.isCancelled { break }
@@ -1715,7 +1715,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						manualBreathState = 3
 						if enableEnhancedAnchors && Bool.random() && !useRealBreathing {
 							playBreathingCue(type: anchors.randomElement()!, isAnchor: true)
-						} else {
+						} else if !useRealBreathing {
 							playBreathingCue(type: "HOLD")
 						}
 					}
@@ -2142,9 +2142,21 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				}
 
 				var chunkBrL: Float = 0; var chunkBrR: Float = 0
-				if vBreath > 0 && !state.isBreathing {
+				if vBreath > 0 {
 					var breathEnv: Float = 0; var sampleIdxForRealBreath = 0; var usingInhale = false; var usingExhale = false
-					if state.syncBreathing {
+					if state.isBreathing {
+						if state.manualBreathState == 1 {
+							usingInhale = true; breathEnv = 0.8
+							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
+							self.syncedRealBreathSampleIndex += 1
+						} else if state.manualBreathState == 2 {
+							usingExhale = true; breathEnv = 0.6
+							sampleIdxForRealBreath = self.syncedRealBreathSampleIndex
+							self.syncedRealBreathSampleIndex += 1
+						} else {
+							self.syncedRealBreathSampleIndex = 0
+						}
+					} else if state.syncBreathing {
 						let syncPhase = Double(self.beatCounter % 8) + (self.tBeat / beatDuration)
 						let phaseBeat = self.beatCounter % 8
 
