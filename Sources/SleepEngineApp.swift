@@ -830,7 +830,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 	}
 
 	private func updateSilentBackgroundAudio() {
-		let shouldKeepAlive = isPlaying || headphoneRemovalSilentMode || (enableMorningAlarm && alarmAutomationArmed && morningAlarmPhase != .idle)
+		let shouldKeepAlive = isPlaying || headphoneRemovalSilentMode || wasPausedByHeadphoneRemoval || (enableMorningAlarm && alarmAutomationArmed && morningAlarmPhase != .idle)
 		if shouldKeepAlive {
 			ensureSilentBackgroundAudio()
 		} else {
@@ -1407,7 +1407,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		var targetCutoff: Float = enableHSPMode ? 2500.0 : 20000.0
 		var shouldBypassEQ = !enableHSPMode
 
-		if enableSleepTimer, let start = sleepTimerStartDate, isPlaying {
+		if enableSleepTimer, let start = sleepTimerStartDate, (isPlaying || wasPausedByHeadphoneRemoval) {
 			let elapsed = now.timeIntervalSince(start)
 			let playTime = sleepTimerHours * 3600.0
 			let fadeTime = sleepFadeMinutes * 60.0
@@ -1415,6 +1415,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			if elapsed >= playTime + fadeTime {
 				dynamicVolumeMultiplier = 0.0
 				if enableDeepSleepDive { targetCutoff = 400.0; shouldBypassEQ = false }
+				wasPausedByHeadphoneRemoval = false
 				stopSoundscape(keepEngineAlive: enableMorningAlarm && alarmAutomationArmed)
 			} else if elapsed >= playTime {
 				let progress = (elapsed - playTime) / fadeTime
