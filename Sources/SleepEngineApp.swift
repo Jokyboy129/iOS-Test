@@ -1561,6 +1561,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		for track in importedTracks { track.pause() }
 		meditationItems.forEach { $0.avPlayer?.pause() }
 		meditationPlayerNode.pause()
+		AffirmationController.shared.stopLoop()
 		isPlaying = false
 		if !isHeadphoneRemoval {
 			sleepTimerStartDate = nil
@@ -2742,6 +2743,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			ensureSilentBackgroundAudio()
 
 			sleepTimerStartDate = Date()
+			
+			if AffirmationController.shared.isEnabled {
+				AffirmationController.shared.startLoop()
+			}
 
 			DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
 				guard let self = self else { return }

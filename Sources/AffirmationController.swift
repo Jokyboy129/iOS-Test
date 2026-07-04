@@ -7,7 +7,13 @@ class AffirmationController: ObservableObject {
     @Published var isEnabled = false {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "affirmationsEnabled")
-            if isEnabled { startLoop() } else { stopLoop() }
+            if isEnabled { 
+                if AudioEngineManager.shared.isPlaying {
+                    startLoop() 
+                }
+            } else { 
+                stopLoop() 
+            }
         }
     }
     
@@ -47,10 +53,7 @@ class AffirmationController: ObservableObject {
         
         cleanupOldAIFiles()
         updateAvailableAffirmationsCount()
-        
-        if isEnabled {
-            startLoop()
-        }
+        // We no longer start the loop on init. The loop will start when the soundscape starts.
     }
     
     private func cleanupOldAIFiles() {
