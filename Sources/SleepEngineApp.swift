@@ -2743,10 +2743,6 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			ensureSilentBackgroundAudio()
 
 			sleepTimerStartDate = Date()
-			
-			if AffirmationController.shared.isEnabled {
-				AffirmationController.shared.startLoop()
-			}
 
 			DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
 				guard let self = self else { return }
@@ -2758,6 +2754,11 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					self.playMeditationTrack(at: self.currentMeditationIndex)
 				}
 				self.isPlaying = true
+				
+				if AffirmationController.shared.isEnabled {
+					AffirmationController.shared.startLoop()
+				}
+				
 				self.updateNowPlaying()
 				self.updateSilentBackgroundAudio()
 				if let announcement = announcement {
