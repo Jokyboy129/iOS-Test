@@ -8,9 +8,7 @@ class AffirmationController: ObservableObject {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "affirmationsEnabled")
             if isEnabled { 
-                if AudioEngineManager.shared.isPlaying {
-                    startLoop() 
-                }
+                startLoop() 
             } else { 
                 stopLoop() 
             }
@@ -131,6 +129,8 @@ class AffirmationController: ObservableObject {
     func startLoop() {
         playbackTask?.cancel()
         playbackTask = Task {
+            guard AudioEngineManager.shared.isPlaying else { return }
+            
             // Initial delay before starting
             try? await Task.sleep(nanoseconds: UInt64(delayMinutes * 60 * 1_000_000_000))
             
