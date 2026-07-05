@@ -2825,6 +2825,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if isMeditationActive && !meditationItems.isEmpty {
 					playMeditationTrack(at: currentMeditationIndex)
 				}
+				affirmationPlayerNode.play()
 			} catch {}
 		}
 		if wasAlarmRingingBeforeInterruption || isAlarmRinging {
@@ -2882,6 +2883,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if isMeditationActive && !meditationItems.isEmpty {
 					playMeditationTrack(at: currentMeditationIndex)
 				}
+				affirmationPlayerNode.play()
 			} catch {}
 		}
 		if isAlarmRinging {
@@ -2943,6 +2945,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						if self.isMeditationActive && !self.meditationItems.isEmpty {
 							self.playMeditationTrack(at: self.currentMeditationIndex)
 						}
+						self.affirmationPlayerNode.play()
+						if AffirmationController.shared.isEnabled {
+							AffirmationController.shared.startLoop()
+						}
 						self.isPlaying = true
 						self.dynamicVolumeMultiplier = 0.0
 					}
@@ -2990,6 +2996,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					if self.isMeditationActive && !self.meditationItems.isEmpty {
 						self.playMeditationTrack(at: self.currentMeditationIndex)
 					}
+					self.affirmationPlayerNode.play()
 				} catch {}
 			}
 		}
