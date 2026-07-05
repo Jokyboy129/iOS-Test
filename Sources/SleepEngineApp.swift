@@ -2946,11 +2946,12 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							self.playMeditationTrack(at: self.currentMeditationIndex)
 						}
 						self.affirmationPlayerNode.play()
+						self.isPlaying = true
+						self.dynamicVolumeMultiplier = 0.0
+						
 						if AffirmationController.shared.isEnabled {
 							AffirmationController.shared.startLoop()
 						}
-						self.isPlaying = true
-						self.dynamicVolumeMultiplier = 0.0
 					}
 
 					let startMultiplier = self.dynamicVolumeMultiplier
