@@ -48,6 +48,8 @@ class ImportedTrack: Identifiable, ObservableObject {
 	var meditationFadeMultiplier: Double = 1.0 { didSet { updatePlayerVolume() } }
 	var postMeditationMultiplier: Double = 1.0 { didSet { updatePlayerVolume() } }
 
+	var trackLoopCounter = 0
+
 	private func updatePlayerVolume() {
 		let specificMultiplier = delayAfterMeditation ? postMeditationMultiplier : meditationFadeMultiplier
 
@@ -71,11 +73,12 @@ class ImportedTrack: Identifiable, ObservableObject {
 		self.delayAfterMeditation = delayAfterMeditation
 	}
 
-	func scheduleNextLoop() {
+	func scheduleNextLoop(loopId: Int) {
 		guard let pNode = enginePlayerNode, let file = audioFile else { return }
+		guard loopId == trackLoopCounter else { return }
 		pNode.scheduleFile(file, at: nil, completionHandler: {
 			DispatchQueue.main.async { [weak self] in
-				self?.scheduleNextLoop()
+				self?.scheduleNextLoop(loopId: loopId)
 			}
 		})
 	}
@@ -981,11 +984,14 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 		}
 	}
 	
-	private func scheduleLoop(node: AVAudioPlayerNode?, file: AVAudioFile?) {
+	var rainLoopCounter = 0
+
+	private func scheduleLoop(node: AVAudioPlayerNode?, file: AVAudioFile?, loopId: Int) {
 		guard let node = node, let file = file else { return }
+		guard loopId == rainLoopCounter else { return }
 		node.scheduleFile(file, at: nil) { [weak self] in
 			DispatchQueue.main.async {
-				self?.scheduleLoop(node: node, file: file)
+				self?.scheduleLoop(node: node, file: file, loopId: loopId)
 			}
 		}
 	}
@@ -1021,8 +1027,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							engine.connect(pNode, to: importedMixer, format: file.processingFormat)
 						}
 						if !isExporter {
-							track.scheduleNextLoop()
-							track.scheduleNextLoop()
+							track.trackLoopCounter += 1
+							let lId = track.trackLoopCounter
+							track.scheduleNextLoop(loopId: lId)
+							track.scheduleNextLoop(loopId: lId)
 						}
 					}
 				} else {
@@ -1071,8 +1079,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						track.audioFile = file
 						engine.attach(pNode)
 						engine.connect(pNode, to: importedMixer, format: file.processingFormat)
-						track.scheduleNextLoop()
-						track.scheduleNextLoop()
+						track.trackLoopCounter += 1
+						let lId = track.trackLoopCounter
+						track.scheduleNextLoop(loopId: lId)
+						track.scheduleNextLoop(loopId: lId)
 					}
 				} else {
 					track.avPlayer = try? AVAudioPlayer(contentsOf: dest)
@@ -1235,8 +1245,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 							engine.connect(pNode, to: importedMixer, format: file.processingFormat)
 						}
 						if !isExporter {
-							track.scheduleNextLoop()
-							track.scheduleNextLoop()
+							track.trackLoopCounter += 1
+							let lId = track.trackLoopCounter
+							track.scheduleNextLoop(loopId: lId)
+							track.scheduleNextLoop(loopId: lId)
 						}
 					}
 				} else {
@@ -2747,7 +2759,10 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
 				guard let self = self else { return }
 				guard self.engine.isRunning else { return }
-				scheduleLoop(node: rainPlayerNode, file: rainAudioFile)
+				self.rainLoopCounter += 1
+				let rId = self.rainLoopCounter
+				self.scheduleLoop(node: self.rainPlayerNode, file: self.rainAudioFile, loopId: rId)
+				self.scheduleLoop(node: self.rainPlayerNode, file: self.rainAudioFile, loopId: rId)
 				self.rainPlayerNode?.play()
 				for track in self.importedTracks { track.play() }
 				if self.isMeditationActive && !self.meditationItems.isEmpty {
@@ -2820,8 +2835,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if !engine.isRunning {
 					try engine.start()
 				}
+				rainPlayerNode?.stop()
+				rainLoopCounter += 1
+				let rId = rainLoopCounter
+				scheduleLoop(node: rainPlayerNode, file: rainAudioFile, loopId: rId)
+				scheduleLoop(node: rainPlayerNode, file: rainAudioFile, loopId: rId)
 				rainPlayerNode?.play()
-				for track in importedTracks { track.play() }
+				for track in importedTracks {
+					track.enginePlayerNode?.stop()
+					track.trackLoopCounter += 1
+					let lId = track.trackLoopCounter
+					track.scheduleNextLoop(loopId: lId)
+					track.scheduleNextLoop(loopId: lId)
+					track.play()
+				}
 				if isMeditationActive && !meditationItems.isEmpty {
 					playMeditationTrack(at: currentMeditationIndex)
 				}
@@ -2878,8 +2905,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				if !engine.isRunning {
 					try engine.start()
 				}
+				rainPlayerNode?.stop()
+				rainLoopCounter += 1
+				let rId = rainLoopCounter
+				scheduleLoop(node: rainPlayerNode, file: rainAudioFile, loopId: rId)
+				scheduleLoop(node: rainPlayerNode, file: rainAudioFile, loopId: rId)
 				rainPlayerNode?.play()
-				for track in importedTracks { track.play() }
+				for track in importedTracks {
+					track.enginePlayerNode?.stop()
+					track.trackLoopCounter += 1
+					let lId = track.trackLoopCounter
+					track.scheduleNextLoop(loopId: lId)
+					track.scheduleNextLoop(loopId: lId)
+					track.play()
+				}
 				if isMeditationActive && !meditationItems.isEmpty {
 					playMeditationTrack(at: currentMeditationIndex)
 				}
@@ -2940,8 +2979,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 						self.ensureSilentBackgroundAudio()
 						self.updateVoiceRouting()
 						try? self.engine.start()
+						self.rainPlayerNode?.stop()
+						self.rainLoopCounter += 1
+						let rId = self.rainLoopCounter
+						self.scheduleLoop(node: self.rainPlayerNode, file: self.rainAudioFile, loopId: rId)
+						self.scheduleLoop(node: self.rainPlayerNode, file: self.rainAudioFile, loopId: rId)
 						self.rainPlayerNode?.play()
-						for track in self.importedTracks { track.play() }
+						for track in self.importedTracks {
+							track.enginePlayerNode?.stop()
+							track.trackLoopCounter += 1
+							let lId = track.trackLoopCounter
+							track.scheduleNextLoop(loopId: lId)
+							track.scheduleNextLoop(loopId: lId)
+							track.play()
+						}
 						if self.isMeditationActive && !self.meditationItems.isEmpty {
 							self.playMeditationTrack(at: self.currentMeditationIndex)
 						}
@@ -2992,8 +3043,20 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 			if self.isPlaying {
 				do {
 					try self.engine.start()
+					self.rainPlayerNode?.stop()
+					self.rainLoopCounter += 1
+					let rId = self.rainLoopCounter
+					self.scheduleLoop(node: self.rainPlayerNode, file: self.rainAudioFile, loopId: rId)
+					self.scheduleLoop(node: self.rainPlayerNode, file: self.rainAudioFile, loopId: rId)
 					self.rainPlayerNode?.play()
-					for track in self.importedTracks { track.play() }
+					for track in self.importedTracks {
+						track.enginePlayerNode?.stop()
+						track.trackLoopCounter += 1
+						let lId = track.trackLoopCounter
+						track.scheduleNextLoop(loopId: lId)
+						track.scheduleNextLoop(loopId: lId)
+						track.play()
+					}
 					if self.isMeditationActive && !self.meditationItems.isEmpty {
 						self.playMeditationTrack(at: self.currentMeditationIndex)
 					}
