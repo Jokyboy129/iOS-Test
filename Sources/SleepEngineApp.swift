@@ -2054,7 +2054,7 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 				let wVol = state.enableNaturalAcousticHeart ? Float(0.0) : Float(activeWhooshVol)
 				hL += whooshL[idxNoise] * flowEnv * wVol; hR += whooshR[idxNoise] * flowEnv * wVol
 				let posH = self.getPanPos(mode: state.panHeartIndex, time: tChunk)
-				let hbGain: Float = state.isOrganic ? 1.5 : (state.enableNaturalAcousticHeart ? 4.0 : 8.0)
+				let hbGain: Float = state.isOrganic ? 1.5 : (state.enableNaturalAcousticHeart ? 4.0 : 2.5)
 				let (chunkHL, chunkHR) = self.applyStereoPan(inL: hL, inR: hR, pos: posH, vol: vHeart * hbGain)
 
 				var chunkCL: Float = 0; var chunkCR: Float = 0
