@@ -2326,15 +2326,8 @@ class AudioEngineManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 					chunkFaceBrushR = faceBrushR[idx] * vFaceBrush * 1.5
 				}
 
-				let hbAmplitude = max(abs(chunkHL), abs(chunkHR))
-				// Strong ducking factor: the louder the heartbeat, the more the background ducks
-				let duckFactor = 1.0 / (1.0 + hbAmplitude * 2.0)
-				
-				let backgroundL = (chunkCL + chunkBL + chunkWL + chunkBrL + chunkClickL + chunkBinL + chunkFaceBrushL) * duckFactor
-				let backgroundR = (chunkCR + chunkBR + chunkWR + chunkBrR + chunkClickR + chunkBinR + chunkFaceBrushR) * duckFactor
-
-				let finalL = ((chunkHL + backgroundL) / totalGain) * state.soundscapeMultiplier
-				let finalR = ((chunkHR + backgroundR) / totalGain) * state.soundscapeMultiplier
+				let finalL = ((chunkHL + chunkCL + chunkBL + chunkWL + chunkBrL + chunkClickL + chunkBinL + chunkFaceBrushL) / totalGain) * state.soundscapeMultiplier
+				let finalR = ((chunkHR + chunkCR + chunkBR + chunkWR + chunkBrR + chunkClickR + chunkBinR + chunkFaceBrushR) / totalGain) * state.soundscapeMultiplier
 				ptrL?[frame] = finalL; ptrR?[frame] = finalR
 			}
 			self.frameIdx += Int(frameCount)
