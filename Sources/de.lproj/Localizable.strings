@@ -1,4 +1,4 @@
-/* Profiles */
+ï»¿/* Profiles */
 "ASMR Blood Flow (60 BPM)" = "ASMR Blutfluss (60 BPM)";
 "Standard Resting Heart (72 BPM)" = "Normaler Ruhepuls (72 BPM)";
 "Womb Simulation (55 BPM)" = "GebÃ¤rmutter-Simulation (55 BPM)";
@@ -209,13 +209,13 @@
 "Simulate Morning Fade-In" = "Morgen Fade-In simulieren";
 /* Missing Heartrate & Heartbeat strings */
 "Sync with my heart rate" = "Mit meinem Herzschlag synchronisieren";
-"Synced: %lld BPM (Tap to re-sync)" = "Synchronisiert: %lld BPM (Tippen für Re-Sync)";
+"Synced: %lld BPM (Tap to re-sync)" = "Synchronisiert: %lld BPM (Tippen fï¿½r Re-Sync)";
 "Camera Heart Rate Sync" = "Kamera-Herzschlag-Synchronisation";
-"Put your finger over the main camera lens (usually the top or bottom left lens on the back, closest to the flash). Make sure you also cover the flashlight so the light illuminates your finger." = "Lege deinen Finger über die Hauptkameralinse (meist oben oder unten links auf der Rückseite, am nächsten zum Blitz). Decke auch die Taschenlampe ab, damit das Licht deinen Finger durchleuchtet.";
+"Put your finger over the main camera lens (usually the top or bottom left lens on the back, closest to the flash). Make sure you also cover the flashlight so the light illuminates your finger." = "Lege deinen Finger ï¿½ber die Hauptkameralinse (meist oben oder unten links auf der Rï¿½ckseite, am nï¿½chsten zum Blitz). Decke auch die Taschenlampe ab, damit das Licht deinen Finger durchleuchtet.";
 "Detecting pulse..." = "Puls wird ermittelt...";
 "%lld BPM" = "%lld BPM";
 "Use This Heart Rate" = "Diesen Herzschlag verwenden";
-"Scale break when heart rate slows" = "Pausen verlängern, wenn der Herzschlag langsamer wird";
+"Scale break when heart rate slows" = "Pausen verlï¿½ngern, wenn der Herzschlag langsamer wird";
 "Organic Acoustic Heartbeat (51 BPM)" = "Organischer Akustischer Herzschlag (51 BPM)";
 "Uses the camera to measure your real heart rate and sync the heartbeat to it." = "Verwendet die Kamera, um deinen echten Herzschlag zu messen und den Herzschlag der App damit zu synchronisieren.";
 "Custom Breathing" = "Benutzerdefinierte Atmung";
@@ -236,18 +236,18 @@
 "Generation" = "Generierung";
 "Language" = "Sprache";
 "Voice" = "Stimme";
-"Quality Model" = "Qualitätsmodell";
+"Quality Model" = "Qualitï¿½tsmodell";
 "Generate Affirmations Audio" = "Affirmationen-Audio generieren";
 "Generate Audio?" = "Audio generieren?";
-"This will download affirmations using your OpenAI API key." = "Dadurch werden Affirmationen über deinen OpenAI-API-Schlüssel heruntergeladen.";
+"This will download affirmations using your OpenAI API key." = "Dadurch werden Affirmationen ï¿½ber deinen OpenAI-API-Schlï¿½ssel heruntergeladen.";
 "Start" = "Start";
 "Playback Settings" = "Wiedergabe-Einstellungen";
 "Enable Affirmations" = "Affirmationen aktivieren";
-"Volume" = "Lautstärke";
+"Volume" = "Lautstï¿½rke";
 "Delay Between Affirmations" = "Pause zwischen Affirmationen";
 "Panning" = "Panning";
 "Playback Language" = "Wiedergabesprache";
 "Playback Voice" = "Wiedergabestimme";
 "German" = "Deutsch";
 "English" = "Englisch";
-"Random" = "Zufällig";
+"Random" = "Zufï¿½llig";
